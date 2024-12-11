@@ -3,8 +3,7 @@ import numpy as np
 import csv
 import torchhd
 
-path = '/home/victor/hdv/hdvExamples/data/recipesData.csv'
-#path = 'data/recipesData.csv'
+path = 'data/recipesData.csv'
 vectorSize = 10000
 
 def parseData(file):
