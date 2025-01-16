@@ -11,7 +11,7 @@ Este script cuenta con los siguientes argumentos de entrada:
 
 Ejemplo de uso:
 
-  python3 correlation_matrix.py data.json --json 1 --image 1 --image_output datafigs --start 2024-12-11T05:00:00 --end 2024-12-11T21:00:00
+    python3 correlation_matrix.py data.json --json 1 --image 1 --image_output datafigs --start 2024-12-11T05:00:00 --end 2024-12-11T21:00:00
 
 ## lum_processor.py
 Este script cuenta con los siguientes argumentos de entrada:
@@ -22,7 +22,7 @@ Este script cuenta con los siguientes argumentos de entrada:
 
 Ejemplo de uso:
 
-  python3 lum_processor.py data.json results.json lum_processor_filters/lum_data_filter.txt 1
+    python3 lum_processor.py data.json results.json lum_processor_filters/lum_data_filter.txt 1
 
 ## timestamp.py
 Este script cuenta con los siguientes argumentos de entrada:
@@ -31,4 +31,4 @@ Este script cuenta con los siguientes argumentos de entrada:
 
 Ejemplo de uso:
 
-  python3 timestamp.py data.json 208
+    python3 timestamp.py data.json 208
