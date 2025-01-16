@@ -1,0 +1,17 @@
+travel_ms 
+src
+src_ep
+hops
+inputState
+error
+hours_in_emergency
+hours_in_power
+times_in_emergency
+times_in_power
+battery_level
+two_in_one_battery_level
+last_hw_test_result
+last_sw_test_result
+link_quality
+brightness
+device_type
