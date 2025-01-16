@@ -97,7 +97,7 @@ def process_data(entries: List[Dict[str, Any]], parameter_paths: List[str], star
     df = pd.DataFrame(data)
     return df
 
-def save_image_correlation_matrix(df: pd.DataFrame, source_address: int, parameters: List[str]):
+def save_image_correlation_matrix(df: pd.DataFrame, source_address: int, parameters: List[str], image_output):
     """
     Plots a correlation matrix heatmap for the given source_address.
     """
@@ -132,49 +132,12 @@ def save_image_correlation_matrix(df: pd.DataFrame, source_address: int, paramet
     sns.heatmap(corr, annot=True, cmap='coolwarm', fmt=".2f")
     plt.title(f'Correlation Matrix for Source Address {source_address}')
     #plt.show()
-    name = "figsDiag/correlation_plot_" + str(source_address) + ".png"
-    plt.savefig(name)
-
-def plot_pairwise_scatter(df: pd.DataFrame, source_address: int, parameters: List[str]):
-    """
-    Plots pairwise scatter plots for the given source_address.
-    """
+    name = image_output + "/correlation_plot_" + str(source_address) + ".png"
     try:
-        subset = df[df['source_address'] == source_address]
-    except:
-        subset = df[df['src'] == source_address]
-    
-    if subset.empty:
-        print(f"No data available for source_address {source_address}.")
-        return
-
-    # Select only the parameter columns
-    filtered_parameters = [col for col in parameters if col in subset.columns]
-    missing_columns = [col for col in parameters if col not in subset.columns]
-    if missing_columns:
-        print(f"WARNING: The following columns are not in the dataset: {missing_columns}")
-
-    subset_params = subset[filtered_parameters]
-
-    if subset_params.empty:
-        print(f"No parameter data available for source_address {source_address}.")
-        return
-
-    if subset_params.shape[0] < 2:
-        print(f"Not enough data points to generate scatter plots for source_address {source_address}.")
-        return
-    
-    if len(subset_params.columns) > 5:
-        for i in range(0, len(subset_params.columns), 5):
-            block = subset_params.iloc[:, i:i+5]  # Selecciona las siguientes 5 columnas
-            sns.pairplot(block)
-            plt.suptitle(f'Pairwise Scatter Plots for Source Address {source_address}', y=1.02)
-            plt.show(block=True)  # Espera hasta que el usuario cierre el gráfico antes de mostrar el siguiente bloque
-    else:
-        # Si hay 5 o menos variables, mostrar todos los gráficos en un solo bloque
-        sns.pairplot(subset_params)
-        plt.suptitle(f'Pairwise Scatter Plots for Source Address {source_address}', y=1.02)
-        plt.show()
+        plt.savefig(name)
+    except FileNotFoundError:
+        print(f"Error: Directory {image_output} not found")
+        sys.exit(1)
 
 def json_correlation_matrix(df: pd.DataFrame, source_address: int, parameters: List[str]):
     """
@@ -214,8 +177,14 @@ def main():
     parser.add_argument('--end', help="End datetime in ISO format (e.g., '2024-12-07T23:59:59').", default=None)
     parser.add_argument('--parameters', nargs='+', help="List of hierarchical parameter paths to analyze, e.g., 'cbmac_details.cbmac_load' 'buffer_usage.average'. If not provided, all available parameters will be used.", default=None)
     parser.add_argument('--image', choices=['1', '0'], default='0', help="1 if you want to save the correlation matrix plot in images.")
-    parser.add_argument('--json', choices=['1', '0'], default='0', help="1 if you want to save the correlation matrix in a json type file.")
+    parser.add_argument('--image_output', default=None, help="directory where images will be saved. only used when image is 1")
+    parser.add_argument('--json', choices=['1', '0'], default='1', help="1 if you want to save the correlation matrix in a json type file.")
     args = parser.parse_args()
+
+    if args.image == '1':
+        if args.image_output == None:
+            print(f"Error: Argument image is {args.image} but image_output is {args.image_output}")
+            sys.exit(1)
 
     # Parse date range if provided
     start_dt = None
@@ -271,7 +240,7 @@ def main():
     for src in source_addresses:
         print(f"\nGenerating plots for source_address {src}...")
         if args.image == '1':
-            save_image_correlation_matrix(df, src, parameters)
+            save_image_correlation_matrix(df, src, parameters, args.image_output)
         if args.json == '1':
             correlations.append(json_correlation_matrix(df, src, parameters)) 
             sources.append(src) 
