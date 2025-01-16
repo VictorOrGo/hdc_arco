@@ -42,7 +42,7 @@ def extract_timestamps(file_path):
 # Ruta al archivo JSON
 
 def main():
-    parser = argparse.ArgumentParser(description="Visualize correlations of parameters from JSON entries grouped by source_address.")
+    parser = argparse.ArgumentParser(description="Calculate time differences between messages")
     parser.add_argument('input_file', help="Path to the input file containing JSON entries.")
     parser.add_argument('time_lapse', help="Time lapse in seconds. Always add 1 margin second")
     args = parser.parse_args()
