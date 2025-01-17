@@ -11,7 +11,7 @@ Este script cuenta con los siguientes argumentos de entrada:
 
 Ejemplo de uso:
 
-    python3 correlation_matrix.py /home/victor/Descargas/data/data.json --json 1 --image 1 --image_output figsData --parameters battery_level code hops hours_in_emergency hours_in_power link_quality outputState state times_in_emergency times_in_power travel_ms two_in_one_battery_level --start 2024-12-11T05:00:00 --end 2024-12-11T21:00:00
+    python3 correlation_matrix.py data/data.json --json 1 --image 1 --image_output figsData --parameters battery_level code hops hours_in_emergency hours_in_power link_quality outputState state times_in_emergency times_in_power travel_ms two_in_one_battery_level --start 2024-12-11T05:00:00 --end 2024-12-11T21:00:00
 
 ## lum_processor.py
 Este script cuenta con los siguientes argumentos de entrada:
