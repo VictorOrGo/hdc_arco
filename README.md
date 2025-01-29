@@ -39,6 +39,10 @@ Este directorio contiene los diferentes scripts utilizados para el procesamiento
 
 Este script se encargará de, dado un JSON con los datos de los envios realizados por las luminarias, calcular la correlación que existe entre las diferentes variables.
 
+### extract_normality.py
+
+Este script se encarga de procesar el fichero JSON generado por `correlation_matrix.py` con el objetivo de, dado un intervalo, generar otro fichero JSON con las variables que tienen una relación fuerte (es decir, las variables cuyo valor de correlación se encuentra entre el intervalo dado) y ver con la frecuencia que se repiten siendo valores similares. 
+
 ### json_processor.py
 
 Script auxiliar para el procesamiento de archivos de tipo JSON que contienen los datos enviados por las luminarias.
