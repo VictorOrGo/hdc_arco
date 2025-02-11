@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Set
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
-from json_processor import read_entries, get_source_address, get_timestamp
+from json_processor import get_source_address, get_timestamp
 import json
 
 def extract_parameters(entry: Dict[str, Any], parameter_paths: List[str]) -> Dict[str, Any]:
@@ -34,10 +34,8 @@ def parse_datetime(datetime_str: str) -> datetime:
     except ValueError:
         raise ValueError(f"Invalid datetime format: '{datetime_str}'. Use ISO format YYYY-MM-DDTHH:MM:SS.")
 
-def discover_all_parameters(entries: List[Dict[str, Any]]) -> Set[str]:
-    """
-    Recursively traverses JSON entries to discover all unique hierarchical parameter paths.
-    """
+def discover_all_parameters(input_file: str) -> Set[str]:
+
     parameter_paths = set()
 
     def traverse(entry: Dict[str, Any], parent_key: str = ''):
@@ -53,48 +51,70 @@ def discover_all_parameters(entries: List[Dict[str, Any]]) -> Set[str]:
             else:
                 parameter_paths.add(new_key)
 
-    for entry in entries:
-        traverse(entry)
+    with open(input_file, 'r') as infile:
+        for line_number, line in enumerate(infile, start=1):
+            line = line.strip()
+            if not line:
+                continue  # Skip empty lines
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError as e:
+                print(f"Warning: Skipping invalid JSON on line {line_number}: {e}")
 
+            traverse(entry)
+            
     return parameter_paths
 
-def process_data(entries: List[Dict[str, Any]], parameter_paths: List[str], start_dt: datetime = None, end_dt: datetime = None) -> pd.DataFrame:
+def process_data(input_file: str, parameter_paths: List[str], start_dt: datetime = None, end_dt: datetime = None) -> pd.DataFrame:
     """
-    Processes JSON entries to extract parameters and filter by date range.
-    Returns a pandas DataFrame.
+    Reads the input file line by line and parses JSON objects.
+    Returns a list of JSON objects.
     """
+    df = pd.DataFrame()
     data = []
-    for entry in entries:
-        timestamp_str = get_timestamp(entry)
-        if not timestamp_str:
-            continue  # Skip if no timestamp
-        try:
-            timestamp = datetime.fromisoformat(timestamp_str)
-        except ValueError:
-            print(f"Warning: Skipping entry with invalid timestamp format: {timestamp_str}")
-            continue
+    timestamp_list = []
+    with open(input_file, 'r') as infile:
+        for line_number, line in enumerate(infile, start=1):
+            line = line.strip()
+            if not line:
+                continue  # Skip empty lines
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError as e:
+                print(f"Warning: Skipping invalid JSON on line {line_number}: {e}")
+            
+            timestamp_str = get_timestamp(entry)
+            if not timestamp_str:
+                continue  # Skip if no timestamp
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str)
+            except ValueError:
+                print(f"Warning: Skipping entry with invalid timestamp format: {timestamp_str}")
+                continue
+                
+            # Filter by date range if specified
+            if start_dt and timestamp < start_dt:
+                continue
+            if end_dt and timestamp > end_dt:
+                continue
 
-        # Filter by date range if specified
-        if start_dt and timestamp < start_dt:
-            continue
-        if end_dt and timestamp > end_dt:
-            continue
+            source_addr_diag = get_source_address(entry)
+            source_addr_dat = entry.get("src")
+            if source_addr_diag is None and source_addr_dat is None:
+                continue  # Skip if no source_address
 
-        source_addr_diag = get_source_address(entry)
-        source_addr_dat = entry.get("src")
-        if source_addr_diag is None and source_addr_dat is None:
-            continue  # Skip if no source_address
+            params = extract_parameters(entry, parameter_paths)
+            if source_addr_diag is None:
+                params['src'] = source_addr_dat
+            else:
+                params['source_address'] = source_addr_diag
 
-        params = extract_parameters(entry, parameter_paths)
-        if source_addr_diag is None:
-            params['src'] = source_addr_dat
-        else:
-            params['source_address'] = source_addr_diag
-        
-        params['timestamp'] = timestamp
-        data.append(params)
+            # Convertir las nuevas filas a un DataFrame
+            data.append(params)
+            timestamp_list.append(timestamp)
 
-    df = pd.DataFrame(data)
+    df = pd.DataFrame(data, dtype='float32')
+    df['timestamp'] = timestamp_list
     return df
 
 def save_image_correlation_matrix(df: pd.DataFrame, source_address: int, parameters: List[str], image_output):
@@ -116,6 +136,7 @@ def save_image_correlation_matrix(df: pd.DataFrame, source_address: int, paramet
         print(f"WARNING: The following columns are not in the dataset: {missing_columns}")
     
     subset_params = subset[filtered_parameters]
+    del subset, filtered_parameters, missing_columns
 
     if subset_params.empty:
         print(f"No parameter data available for source_address {source_address}.")
@@ -126,6 +147,7 @@ def save_image_correlation_matrix(df: pd.DataFrame, source_address: int, paramet
         return
     
     corr = subset_params.corr()
+    del subset_params
 
     plt.figure(figsize=(16, 9))
     plt.subplots_adjust(top=0.97, bottom=0.27, left=0.23, right=0.9)
@@ -202,13 +224,10 @@ def main():
         print("Error: Start datetime cannot be after end datetime.")
         sys.exit(1)
 
-    # Read and filter entries
-    entries = read_entries(args.input_file)
-
     # Discover all parameters if none are specified
     if not args.parameters:
         print("No parameters specified. Discovering all available parameters from the data...")
-        all_parameters = discover_all_parameters(entries)
+        all_parameters = discover_all_parameters(args.input_file)
         if not all_parameters:
             print("No parameters found in entries.")
             sys.exit(0)
@@ -218,9 +237,9 @@ def main():
         parameters = sorted(all_parameters)
     else:
         parameters = args.parameters
-
+    
     # Process data
-    df = process_data(entries, parameters, start_dt, end_dt)
+    df = process_data(args.input_file, parameters, start_dt, end_dt)
 
     if df.empty:
         print("No data available after applying filters.")
@@ -232,6 +251,9 @@ def main():
     except:
         source_addresses = df['src'].unique()
 
+    source_addresses = source_addresses.astype('int16')
+
+
     print(f"Found {len(source_addresses)} unique source_address(es): {source_addresses}")
 
     # Generate plots for each source_address
@@ -241,6 +263,7 @@ def main():
         print(f"\nGenerating plots for source_address {src}...")
         if args.image == '1':
             save_image_correlation_matrix(df, src, parameters, args.image_output)
+        
         if args.json == '1':
             correlations.append(json_correlation_matrix(df, src, parameters)) 
             sources.append(src) 
@@ -251,6 +274,6 @@ def main():
 
             with open("correlation_matrix.json", "w") as json_file:
                 json.dump(matrices_dict, json_file, indent=4)
-
+        
 if __name__ == "__main__":
     main()
