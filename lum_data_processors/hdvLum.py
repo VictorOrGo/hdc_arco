@@ -312,6 +312,8 @@ def range_hdv_levels(higher, lower, vector_size, parameter, num_levels):
 
         b = round(vector_size / (2*(num_levels-1))) # b = D / 2(M-1)
 
+        if b == 0: b = 1
+
         for i in range(num_levels):
             if i == 0:
                 prev_tensor = matrix_s[lower].to(device).clone()
@@ -352,7 +354,9 @@ def lum_to_hdv_levels(df_lum:pd.DataFrame):
     lum_hdv_prot = None
     i = 0
 
-    df_lum = df_lum.drop(columns=["src", "timestamp"])
+    #df_lum = df_lum.drop(columns=["src", "timestamp"])
+    df_lum = df_lum.drop(columns=["timestamp"])
+    
     bundleCount = 0
 
     if df_lum.empty:
@@ -373,7 +377,7 @@ def lum_to_hdv_levels(df_lum:pd.DataFrame):
                     nearest_value = min(indices, key=lambda v: abs(v - value))
                     lum_hdv_entry = params_hdv[i][nearest_value]
                 except:
-                    print("")
+                    print(f"ERROR {variable} : {value}")
             else:
                 try:
                     indices = params_hdv[i].keys()
@@ -413,9 +417,21 @@ def entry_to_hdv_levels(entry):
         row = entry
     else:
         row = entry._asdict()
+    try:
         del(row["Index"])
-    del(row["src"])
-    del(row["timestamp"])
+    except:
+        pass
+
+    # try:
+    #     del(row["src"])
+    # except:
+    #     pass
+
+    try:
+        del(row["timestamp"])
+    except:
+        pass
+
     i = 0
     for __, value in row.items():
         if pd.isna(value):  
@@ -436,6 +452,24 @@ def entry_to_hdv_levels(entry):
     lum_hdv_entry = torch.where(lum_hdv_entry > 0, torch.tensor(1, device=lum_hdv_entry.device), torch.tensor(-1, device=lum_hdv_entry.device))
     return lum_hdv_entry
 
+def df_add_label(df:pd.DataFrame, k_classes, min_value, max_value):
+    increment = round((max_value - min_value) / k_classes) 
+    k_classes_max_value = []
+
+    count = increment
+    for i in range(k_classes):
+        k_classes_max_value.append(count)
+        count += increment
+
+    df.loc['Ek_class'] = None
+    for index, travel_ms in df.itertuples():
+        if index == 'Ek_class': continue
+        k_class = np.searchsorted(k_classes_max_value, travel_ms, side="left")
+        df.at[index, 'Ek_class'] = k_class
+    
+    return df
+
+
 def main():
 
     parser = argparse.ArgumentParser(description="Visualize correlations of parameters from JSON entries grouped by source_address.")
@@ -444,6 +478,7 @@ def main():
     parser.add_argument('--already_saved_hdv_matrices', help="If 1 the matrices will not be generated and the files containing them must exist and match the parameters name, if 0 matrices will be created and saved in files", default=0)
     parser.add_argument('--already_saved_hdvs_prot', help="If 1 the HDV prototypes will not be generated and the files containing them must exist and match the node number, if 0 HDV prototypes will be created and saved in files", default=0)
     parser.add_argument('--parameters', nargs='+', help="List of hierarchical parameter paths to analyze, e.g., 'cbmac_details.cbmac_load' 'buffer_usage.average'. If not provided, all available parameters will be used.", default=None)
+    parser.add_argument('--k_classes', help="Number of classes", default=10)
     args = parser.parse_args()
 
     '''
@@ -473,20 +508,9 @@ def main():
     else:
         print("Getting parameter ranges...")
         ranges = lower_and_higher_value(args.data_file, parameters)
-        m_levels = (ranges["travel_ms"]["higher"] - ranges["travel_ms"]["lower"])
+        m_levels = 3336#(ranges["travel_ms"]["higher"] - ranges["travel_ms"]["lower"]) -160000
         generate_hdvs(args.data_file, args.vector_size, parameters, ranges, m_levels)
         save_matrix_to_files()
-
-    ''' TEST CORRELACION ENTRE LAS LOS HDV DE params_hdv
-    for matrix in params_hdv: #params_hdv[i][j] accede al hdv de la matriz de un parametro. ojo, la matriz es un diccionario {0: tensor, 1: tensor ...}
-        hdv_prev = next(iter(matrix.values()))
-        for index, hdv in matrix.items():
-            try:
-                cos = torchhd.cosine_similarity(hdv, hdv_prev)
-                print(f"{cos}")
-            except:
-                print("")
-        return'''
 
     '''
     Una vez calculadas y generadas las matrices de HDVs para cada variable procederemos con la creación de los HDV prototipo de cada luminaria.
@@ -501,27 +525,38 @@ def main():
     '''
 
     print("Processing Data...")
+    nodes = [15, 16]
     df = process_data(args.data_file, parameters, None, None)
-    nodes = df["src"].unique()
+    df = df[df["src"].isin(nodes)]
+    df_train, df_test = train_test_split(df, test_size=0.2, random_state=42)
+    del df
+    #nodes = df_train["src"].unique()
     lum_hdvs = {}
     lum_hdvs_test = {}
+    k_classes = int(args.k_classes)
 
-    df_train, df_test = train_test_split(df, test_size=0.2, random_state=42, shuffle=True)
-    del df
+    df_test_labeled = df_test.drop(columns=['timestamp'])
+    df_test = df_test.drop(columns=['timestamp'])
+    #df_test_labeled = df_test_labeled.dropna()
+    
+    hdv_nodes = {}
+    for node in nodes:
+        hdv_nodes[node] = torchhd.random(1, int(args.vector_size), "MAP", dtype=torch.int8)
 
-    ''' TEST IR QUITANDO VARIABLES PARA VER COMO DE BIEN LO HACE
+    params_hdv.append(hdv_nodes) 
+    params_hdv_order.append("src")
 
-    params_hdv.clear() 
-    params_hdv_order.clear()
-    ranges_ordered = sorted(ranges.keys(), key=lambda k: abs(ranges[k]["higher"] - ranges[k]["lower"])) # Ordered from lesser difference to greater difference between the higher and lower value
-    ranges = lower_and_higher_value(args.data_file, ranges_ordered)
-    generate_hdvs(args.data_file, args.vector_size, ranges_ordered, ranges)
-    ranges_ordered.append("src")
-    ranges_ordered.append("timestamp")
-    df_train = df_train[ranges_ordered]
-    test_vars(df_train, ranges_ordered, ranges)
+    ''' ---- CLASSIFIER ENCODING ---- '''
+    print("Encoding Classifiers...")
+
+    lum_hdvs = {} # key = class, value = hdv
+
+    for node in nodes:
+        subdf = df_train[df_train["src"] == node]
+        subdf.to_json(f'{node}_train.json', orient='records', lines=True)
+        lum_hdvs[node] = lum_to_hdv_levels(subdf)
+
     '''
-
     if(int(args.already_saved_hdvs_prot) == 0):
         for node in nodes:
             subdf = df_train[df_train["src"] == node]
@@ -536,7 +571,7 @@ def main():
                 lum_hdvs[node] = torch.load(f'{hdv_prototypes_path}/{int(node)}.pt', weights_only=False)
             except:
                 print(f"No file found for lum {int(node)}")
-    '''
+    
     for node in nodes:
             subdf = df_test[df_test["src"] == node]
             lum_hdvs_test[node] = lum_to_hdv_levels(subdf)
@@ -546,17 +581,56 @@ def main():
             except:
                 print("")
     '''
-    df_test = process_data("testEntry.json", parameters, None, None)
-    hdva = None
+
+    ''' ---- TESTING ---- '''
+    print("Testing Classifiers...")
+
+    highest_cos = 0
+    ek_class = -1
+    results = [] # each component will have the class determined for each row. its order is the same as the rows order
+    df_test.to_json('test.json', orient='records', lines=True)
+    index = -1
+    for i in range(len(params_hdv_order)):
+        if params_hdv_order[i] == 'src':
+            index = i
+            break
+    for row in df_test.itertuples():
+        hdv = entry_to_hdv_levels(row)
+        for node in nodes:
+            if lum_hdvs[node] == None:
+                continue
+            cos = torchhd.cosine_similarity(params_hdv[index][node],hdv)
+            if cos > highest_cos:
+                highest_cos = cos
+                ek_class = node
+        results.append(ek_class)
+        highest_cos = 0
+        ek_class = -1
+
+    labels = df_test_labeled['src'].astype(int).to_numpy()
+    num_correct = 0
+    num_wrong = 0
+    for i in range(len(results)):
+        if results[i] == labels[i]:
+            num_correct += 1
+        else:
+            num_wrong += 1
+
+    print(f"Num Correct: {num_correct}, Num Wrong {num_wrong} -> Accuracy: {num_correct / (num_correct + num_wrong)}")
+    return
+    hdvfin = None
     for row in df_test.itertuples():
         try:
-            hdv = entry_to_hdv_levels(row)
-
-            cos = torchhd.cosine_similarity(lum_hdvs[15],hdv)
-            ham = torchhd.hamming_similarity(lum_hdvs[15],hdv)
-            print(f"Cosine: {cos} // Hamming {ham}")
+            if hdvfin == None:
+                hdvfin = entry_to_hdv_levels(row)
+            else:
+                hdvfin = torchhd.bundle(hdvfin, entry_to_hdv_levels(row))
         except:
             print("nope")
+    hdvfin.sign()
+    cos = torchhd.cosine_similarity(lum_hdvs[15],hdvfin)
+    ham = torchhd.hamming_similarity(lum_hdvs[15],hdvfin)
+    print(f"Cosine: {cos} // Hamming {ham}")
     return
     
     for node in nodes:
