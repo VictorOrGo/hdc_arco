@@ -4,7 +4,23 @@ Este repositorio contiene diferentes ejemplos de cómo hacer uso de los HDV (*hy
 
 También contiene diferentes scripts de procesamiento de datos que enviados por las luminarias de Zemper basadas en la tecnología de Wirepas.
 
-## hdvExamples
+## aux_scripts
+
+Contiene scripts que realizan diferentes tareas ya sean para limpiar datos, sacar diferentes resultados intermedios etc.
+
+### borrar.py
+
+Script para borrar líneas de un fichero hasta encontrar una palabra clave
+
+### calcB.py
+
+Script para calcular los diferentes valores que puede tomar b al variar M
+
+### range.py
+
+Script usado para obtener el máximo y el mínimo de los valores que pueden tomar las diferentes variables de un fichero json
+
+## examples
 
 Este directorio contiene los diferentes ejemplos en los que se implementan HDV para resolver diferentes problemas.
 
@@ -60,4 +76,8 @@ Este script calcula la diferencia de tiempo que existe entre los envios de una l
 Este directorio contiene los filtros que son usados por los diferentes scripts.
 
 - `lum_data_filter.txt` es un ejemplo de un fichero de filtro usado por `lum_processor.py`
+
+## synthetic_data
+
+Este directorio contiene archivos .json con entradas de datos de luminarias sintéticos para realizas diferentes pruebas
 
