@@ -11,8 +11,11 @@ import time
 from rich.console import Console
 from rich.table import Table
 from sklearn.model_selection import train_test_split
+import random
+import matplotlib.pyplot as plt
 
 'python3 lum_data_processors/hdvLum.py /home/victor/Descargas/xmas_merged_data.json --parameters battery_level hops hours_in_emergency hours_in_power link_quality outputState state times_in_emergency times_in_power travel_ms two_in_one_battery_level WBN_rssi_correction_val buffer_usage.average buffer_usage.maximum Network_channel_PER cbmac_details.cbmac_load cbmac_details.cbmac_rx_messages_ack cbmac_details.cbmac_rx_messages_unack cbmac_details.cbmac_rx_ack_other_reasons cbmac_details.cbmac_tx_ack_cca_fail cbmac_details.cbmac_tx_ack_not_received cbmac_details.cbmac_tx_messages_ack cbmac_details.cbmac_tx_messages_unack cbmac_details.cbmac_tx_cca_unack_fail unknown unkown network_scans_amount scanstat_avg_routers cfmac_pending_broadcast_le_member cluster_channel packets_dropped Unack_broadcast_channel cluster_members nexthop_details.advertised_cost nexthop_details.sink_address nexthop_details.next_hop_address nexthop_details.next_hop_quality nexthop_details.next_hop_rssi nexthop_details.next_hop_power'
+'python3 lum_data_processors/hdvLum.py /home/victor/Descargas/new_file.json --already_saved_hdv_matrices 0 --already_saved_hdvs_prot 0 --parameters battery_level hops hours_in_emergency times_in_emergency times_in_power two_in_one_battery_level nexthop_details.advertised_cost nexthop_details.sink_address nexthop_details.next_hop_address state cbmac_details.cbmac_rx_ack_other_reasons buffer_usage.average outputState buffer_usage.maximum nexthop_details.next_hop_quality nexthop_details.next_hop_rssi cluster_channel nexthop_details.next_hop_power cluster_members link_quality hours_in_power travel_ms WBN_rssi_correction_val cbmac_details.cbmac_load cbmac_details.cbmac_rx_messages_ack cbmac_details.cbmac_rx_messages_unack cbmac_details.cbmac_tx_ack_cca_fail cbmac_details.cbmac_tx_ack_not_received cbmac_details.cbmac_tx_messages_ack cbmac_details.cbmac_tx_messages_unack cbmac_details.cbmac_tx_cca_unack_fail network_scans_amount cfmac_pending_broadcast_le_member Unack_broadcast_channel'
 
 params_hdv = [] # params_hdv[i] accede a la matriz de esa posición (la matriz de un parametro). params_hdv[i][j] accede al hdv de la matriz de un parametro. ojo, la matriz es un diccionario {0: tensor, 1: tensor ...}
 params_hdv_order = []
@@ -51,47 +54,6 @@ def lower_and_higher_value(data_file, parameters):
 
     return result # Dict{dict} // result['hours_in_power'] = {'higher': 20555, 'lower': 44}
 
-def range_hdv(higher, lower, vector_size, parameter):
-    '''
-    Function that generates related HDVs on the GPU and saves them in a matrix
-
-    This function will firstly generate a matrix of completely random HDVs. After the matrix is created, its HDVs will
-    be modified so the values that are close are related and the values that are far apart are not so much. This modification
-    will occur if, given a random number between 0 and 1, it is smaller than 1 / k.  
-    '''
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    matrix = {}
-    num_steps = higher - lower
-    k = (num_steps - 1)
-
-    if num_steps == 0:  # If the range has only 1 value, only one HDV will be its matrix
-        matrix[higher] = torchhd.random(1, vector_size, "MAP", dtype=torch.int8).to(device)
-
-    for i in range(lower, higher + 1):
-        matrix[i] = torchhd.random(1, vector_size, "MAP",dtype=torch.int8).to(device)
-
-    def create_related_matrix(lower, higher, matrix_s, k):
-                
-        for i in range(lower + 1, higher + 1):
-            prev_tensor = matrix_s[i-1][0].to(device)
-
-            rand_tensor = torch.rand(prev_tensor.size(), device=device)  # We generate the probabilities we need all at once
-
-            matrix_s[i][0] = torch.where(rand_tensor < (1 / k), -prev_tensor, prev_tensor) # We modify the HDV if the condition is met
-
-    create_related_matrix(lower, higher, matrix, k)
-
-    for i in range(lower, higher + 1):
-        matrix[i] = matrix[i].cpu()  # We move the matrix to RAM in order to save space in the GPU for the next matrix if needed
-
-    torch.cuda.empty_cache()
-
-    params_hdv_order.append(parameter)
-    params_hdv.append(matrix)
-    print(f"Matriz de HDVs creada para {parameter}")
-
 def generate_hdvs(data_file, vector_size, parameters, ranges, m_levels):
     '''
     Recogeremos los valores más altos y más bajos encontrados para cada variable
@@ -110,7 +72,6 @@ def generate_hdvs(data_file, vector_size, parameters, ranges, m_levels):
     for param in ranges.keys():
         time_ini = time.time()
         range_hdv_levels(ranges[param]["higher"],ranges[param]["lower"],int(vector_size),param,m_levels) 
-        #range_hdv(ranges[param]["higher"],ranges[param]["lower"],int(vector_size),param)
         time_fin = round(time.time() - time_ini, 4)
         times.append(time_fin)
         params.append(param)
@@ -172,123 +133,6 @@ def read_selected_matrix_rows(input_file_name, lower, higher):
     del loaded_matrix_tensor
     return rows
 
-def lum_to_hdv(df_lum:pd.DataFrame):
-    '''
-    Function that given a dataframe that contains ONLY the entries from ONLY one lum
-
-    This function will iter every row in the dataframe. Then per every row it will take the value of each column
-    and look for its HDV. Once found it will do the bundle operation to add the previous information with the new one.
-    This will result in the HDV prototype of the lum
-    '''
-
-    lum_hdv_entry = None
-    lum_hdv_prot = None
-    i = 0
-
-    df_lum = df_lum.drop(columns=["src", "timestamp"])
-    bundleCount = 0
-
-    if df_lum.empty:
-        print("Dataset empty, continuing with next node")
-        return None
-
-    for row in df_lum.itertuples():
-        row = row._asdict()
-        del(row["Index"])
-
-        for variable, value in row.items():
-            if pd.isna(value):  
-                i += 1
-                continue
-            if lum_hdv_entry == None:
-                try:
-                    lum_hdv_entry = params_hdv[i][int(value)]
-                except:
-                    print("")
-            else:
-                try:
-                    lum_hdv_entry = torchhd.bundle(lum_hdv_entry, params_hdv[i][int(value)])
-                except:
-                    print(f"ERROR {variable} : {value}")
-            
-            i += 1
-
-        if lum_hdv_prot == None:
-            lum_hdv_prot = lum_hdv_entry
-        else:
-            try:
-                if bundleCount >= 100:
-                    lum_hdv_entry = lum_hdv_entry.sign()
-                    lum_hdv_prot = torch.sign(torchhd.bundle(lum_hdv_prot, lum_hdv_entry))
-                    bundleCount = 0
-                else:
-                    lum_hdv_entry = lum_hdv_entry.sign()
-                    lum_hdv_prot = torchhd.bundle(lum_hdv_prot, lum_hdv_entry)
-                    bundleCount += 1
-            except:
-                print(f"Data entry with all None values found, skipping line")
-
-        lum_hdv_entry = None
-        i = 0
-    
-    #lum_hdv_prot = torch.sign(lum_hdv_prot)
-    return torch.sign(lum_hdv_prot)
-
-def entry_to_hdv(entry):
-
-    lum_hdv_entry = None
-    if isinstance(entry, dict):
-        row = entry
-    else:
-        row = entry._asdict()
-    #del(row["Index"])
-    del(row["src"])
-    del(row["timestamp"])
-    i = 0
-    for __, value in row.items():
-        if pd.isna(value):  
-            i += 1
-            continue
-        
-        if lum_hdv_entry == None:
-            lum_hdv_entry = params_hdv[i][int(value)]
-        else:
-            lum_hdv_entry = torchhd.bundle(lum_hdv_entry, params_hdv[i][int(value)])
-        
-        i+=1
-        
-    return torch.sign(lum_hdv_entry)
-
-def test_vars(df, ranges_ordered, ranges):
-    entry = {"travel_ms":15,"src":145,"src_ep":1,"hops":3,"msg_id":228472,"msg_type":0,"msg_class":"StatusData","type":"StatusData","state":1.0,"outputState":16641.0,"inputState":0.0,"error":128.0,"hours_in_emergency":0.0,"hours_in_power":7799.0,"times_in_emergency":14.0,"times_in_power":16.0,"battery_level":3476.0,"two_in_one_battery_level":0.0,"configuration":9.0,"last_hw_test_result":0.0,"last_sw_test_result":0.0,"link_quality":152.0,"pictogram":0.0,"brightness":25600.0,"configured":0.0,"sensors":0.0,"device_type":1.0,"timestamp":"2024-12-28T12:38:05.690","code":None,"error_code":None,"model":None,"battery_type":None,"app_firmware_major":None,"app_firmware_minor":None,"app_firmware_maintenaince":None,"app_firmware_devel":None,"app_stack_major":None,"app_stack_minor":None,"app_stack_maintenaince":None,"app_stack_devel":None,"app_TFT_major":None,"app_TFT_minor":None,"app_TFT_maintenaince":None,"functionality":None,"trace_options":{"trace_type":1,"sequence":6},"cbmac_details":{"cbmac_load":8,"cbmac_rx_messages_ack":1166,"cbmac_rx_messages_unack":58710,"cbmac_rx_ack_other_reasons":4764,"cbmac_tx_ack_cca_fail":48953,"cbmac_tx_ack_not_received":56453,"cbmac_tx_messages_ack":8021,"cbmac_tx_messages_unack":11252,"cbmac_tx_cca_unack_fail":9159},"buffer_usage":{"average":7,"maximum":8},"nexthop_details":{"advertised_cost":4,"sink_address":1000,"next_hop_address":11,"next_hop_quality":254,"next_hop_rssi":-71,"next_hop_power":8},"WBN_rssi_correction_val":-3.0,"Unack_broadcast_channel":13.0,"Installation quality":{"quality_indicator":152,"error_bitmap":0},"cluster_head_members":2.0,"cluster_members":2.0,"cbmac_blacklisting_channels_min_to_40":4227072.0,"cfmac_pending_broadcast_le_member":26.0,"cbmac_packets_expired_pending":5.0,"cbmac_broadcast_ll_members_pending":255.0,"cluster_channel_reliability":235.0,"cluster_channel":36.0,"scanstat_avg_routers":55.0,"network_scans_amount":None,"role":None,"unkown":None,"events":{"event1":48},"unknown":None,"Network_channel_PER":None,"Dropped_unack_bcs_packet":None,"cbmac_broadcast_unack_pending":None,"cbmac_unicast_cluster_pending":None,"cbmac_unicast_members_pending":None,"CCA_limit_dBm":None,"unknown_field":None,"Boot_reason":None,"Rx_gain":None,"Tx_power_table":None,"boot_fault_reason":None,"firmware_app":None,"stack_profile":None,"hardware_magic":None,"scratchpad_processed_sequence":None,"boot_address":None,"boot_filename_hash":None,"boot_line_number":None,"otap_support":None,"scratchpad_stored_sequence":None,"firmware_stack":None,"boot_count":None,"packets_dropped":None,"memory_allocation_failures":None,"cbmac_packets_reroute_pending":None}
-    entry = extract_parameters(entry, ranges_ordered)
-    variables_added = []
-    hdv_prot = None
-
-    for variable in ranges_ordered:
-        if variable == "src" or variable == "timestamp": continue
-
-        subdf = df[df["src"] == 145]
-        subdf = subdf.drop(columns=variables_added)
-        hdv_prot = lum_to_hdv(subdf)
-
-        entry_higher = entry.copy()
-        entry_lower = entry.copy()
-        entry_higher[variable] = ranges[variable]["higher"]
-        entry_lower[variable] = ranges[variable]["lower"]
-        
-        hdv_higher = entry_to_hdv(entry_higher)
-        hdv_lower = entry_to_hdv(entry_lower)
-
-        cos_higher = torchhd.cosine_similarity(hdv_higher, hdv_prot)
-        cos_lower = torchhd.cosine_similarity(hdv_lower, hdv_prot)
-
-        variables_added.append(variable)
-        params_hdv.pop(0)
-        del(entry[variable])
-
-        print(f"NUM VARIABLES ({20-len(variables_added)}) : LOWER - {cos_lower} // HIGHER - {cos_higher}\n")
-
 def range_hdv_levels(higher, lower, vector_size, parameter, num_levels):
     '''
     Function that generates related HDVs on the GPU and saves them in a matrix
@@ -310,22 +154,34 @@ def range_hdv_levels(higher, lower, vector_size, parameter, num_levels):
         increment = round((abs(higher) + abs(lower)) / num_levels, 4)
         aux = lower
 
-        b = round(vector_size / (2*(num_levels-1))) # b = D / 2(M-1)
-
+        b = round(vector_size / (2 * (num_levels - 1)))  # b = D / 2(M-1)
         if b == 0: b = 1
 
+        used_indices = set()
+
+        keys = [round(lower + i * increment, 4) for i in range(num_levels)]
+
         for i in range(num_levels):
+            key = keys[i]
+            
             if i == 0:
                 prev_tensor = matrix_s[lower].to(device).clone()
             else:
-                index = round(aux - increment, 4)
-                prev_tensor = matrix_s[index].to(device).clone()
+                prev_tensor = matrix_s[keys[i - 1]].to(device).clone()
 
-            indices = torch.randperm(vector_size, device=device)[:b]
-            aux = round(aux + increment, 4)
-            
+            # Selección de índices
+            available = list(set(range(vector_size)) - used_indices)
+            if len(available) < b:
+                used_indices = set()
+                available = list(range(vector_size))
+                
+            selected = random.sample(available, b)
+            used_indices.update(selected)
+            indices = torch.tensor(selected, device=device)
+
             prev_tensor[indices] *= -1
-            matrix_s[aux] = prev_tensor
+
+            matrix_s[key] = prev_tensor
 
     create_related_matrix(lower, higher, matrix, num_levels, vector_size, device)
 
@@ -355,7 +211,15 @@ def lum_to_hdv_levels(df_lum:pd.DataFrame):
     i = 0
 
     #df_lum = df_lum.drop(columns=["src", "timestamp"])
-    df_lum = df_lum.drop(columns=["timestamp"])
+    try:
+        df_lum = df_lum.drop(columns=["src"])
+    except:
+        pass
+
+    try:
+        df_lum = df_lum.drop(columns=["timestamp"])
+    except:
+        pass
     
     bundleCount = 0
 
@@ -422,10 +286,10 @@ def entry_to_hdv_levels(entry):
     except:
         pass
 
-    # try:
-    #     del(row["src"])
-    # except:
-    #     pass
+    try:
+        del(row["src"])
+    except:
+        pass
 
     try:
         del(row["timestamp"])
@@ -442,6 +306,12 @@ def entry_to_hdv_levels(entry):
             indices = params_hdv[i].keys()
             nearest_value = min(indices, key=lambda v: abs(v - value))
             lum_hdv_entry = params_hdv[i][nearest_value]
+
+            keys = list(params_hdv[i])
+            indice = keys.index(nearest_value)
+            # previous_key = keys[indice - 1] if indice > 0 else None
+            # next_key = keys[indice + 1] if indice < len(keys) - 1 else None
+            # print(f"For battery_level {value} -> M level {indice} (previous mapped level {previous_key} | mapped value: {nearest_value} | next mapped level {next_key})")
         else:
             indices = params_hdv[i].keys()
             nearest_value = min(indices, key=lambda v: abs(v - value))
@@ -478,7 +348,9 @@ def main():
     parser.add_argument('--already_saved_hdv_matrices', help="If 1 the matrices will not be generated and the files containing them must exist and match the parameters name, if 0 matrices will be created and saved in files", default=0)
     parser.add_argument('--already_saved_hdvs_prot', help="If 1 the HDV prototypes will not be generated and the files containing them must exist and match the node number, if 0 HDV prototypes will be created and saved in files", default=0)
     parser.add_argument('--parameters', nargs='+', help="List of hierarchical parameter paths to analyze, e.g., 'cbmac_details.cbmac_load' 'buffer_usage.average'. If not provided, all available parameters will be used.", default=None)
+    parser.add_argument('--m_levels', help="Number of levels", default=3336)
     parser.add_argument('--k_classes', help="Number of classes", default=10)
+    parser.add_argument('--output_image', help="Name of output image")
     args = parser.parse_args()
 
     '''
@@ -508,9 +380,17 @@ def main():
     else:
         print("Getting parameter ranges...")
         ranges = lower_and_higher_value(args.data_file, parameters)
-        m_levels = 3336#(ranges["travel_ms"]["higher"] - ranges["travel_ms"]["lower"]) -160000
+        m_levels = int(args.m_levels)#3336#(ranges["travel_ms"]["higher"] - ranges["travel_ms"]["lower"]) -160000
         generate_hdvs(args.data_file, args.vector_size, parameters, ranges, m_levels)
-        save_matrix_to_files()
+        #save_matrix_to_files()
+
+    valores = list(params_hdv[0].values())
+
+    # Comprobamos si hay duplicados
+    if len(valores) == len(set(valores)):
+        print("No hay valores repetidos.")
+    else:
+        print("Hay valores repetidos.")
 
     '''
     Una vez calculadas y generadas las matrices de HDVs para cada variable procederemos con la creación de los HDV prototipo de cada luminaria.
@@ -525,36 +405,54 @@ def main():
     '''
 
     print("Processing Data...")
-    nodes = [15, 16]
-    df = process_data(args.data_file, parameters, None, None)
-    df = df[df["src"].isin(nodes)]
-    df_train, df_test = train_test_split(df, test_size=0.2, random_state=42)
-    del df
-    #nodes = df_train["src"].unique()
-    lum_hdvs = {}
-    lum_hdvs_test = {}
-    k_classes = int(args.k_classes)
-
-    df_test_labeled = df_test.drop(columns=['timestamp'])
-    df_test = df_test.drop(columns=['timestamp'])
-    #df_test_labeled = df_test_labeled.dropna()
+    # df = process_data(args.data_file, parameters, None, None)
+    # nodes = df["src"].unique()
+    # df_train, df_test = train_test_split(df, test_size=0.2, random_state=42)
+    # del df
     
-    hdv_nodes = {}
-    for node in nodes:
-        hdv_nodes[node] = torchhd.random(1, int(args.vector_size), "MAP", dtype=torch.int8)
+    df_train = process_data('/home/victor/hdvExamples/lum15Train.json', parameters, None, None)
+    df_test = process_data('/home/victor/hdvExamples/lum15Test.json', parameters, None, None)
 
-    params_hdv.append(hdv_nodes) 
-    params_hdv_order.append("src")
+    # df_train = df_train[df_train["src"] == 15]
+    # df_test = df_test[df_test["src"] == 15]
+    # df_train['timestamp'] = pd.to_datetime(df_train['timestamp'])
+    # df_train['timestamp'] = df_train['timestamp'].apply(lambda x: x.isoformat())
+    # df_train.to_json('lum15Train.json', orient='records', lines=True)
+    # df_test['timestamp'] = pd.to_datetime(df_test['timestamp'])
+    # df_test['timestamp'] = df_test['timestamp'].apply(lambda x: x.isoformat())
+    # df_test.to_json('lum15Test.json', orient='records', lines=True)
+    
+    lum_hdvs = {}
+
+    df_test = df_test.drop(columns=['timestamp'])
+    
+    # hdv_nodes = {}
+    # for node in nodes:
+    #     hdv_nodes[node] = torchhd.random(1, int(args.vector_size), "MAP", dtype=torch.int8)
+
+    # params_hdv.append(hdv_nodes) 
+    # params_hdv_order.append("src")
 
     ''' ---- CLASSIFIER ENCODING ---- '''
     print("Encoding Classifiers...")
 
     lum_hdvs = {} # key = class, value = hdv
 
-    for node in nodes:
-        subdf = df_train[df_train["src"] == node]
-        subdf.to_json(f'{node}_train.json', orient='records', lines=True)
-        lum_hdvs[node] = lum_to_hdv_levels(subdf)
+    df_train = df_train.dropna()
+    lum_hdvs[15] = lum_to_hdv_levels(df_train)
+    print(f"Lum {int(15)} processed.")
+
+    # for node in nodes:
+    #     subdf = df_train[df_train["src"] == node]
+    #     lum_hdvs[node] = lum_to_hdv_levels(subdf)
+    #     torch.save(lum_hdvs[node], f'{hdv_prototypes_path}/{int(node)}.pt')
+
+    # for node in nodes:
+    #     try:
+    #         print(f"Reading {int(node)} HDV file")
+    #         lum_hdvs[node] = torch.load(f'{hdv_prototypes_path}/{int(node)}.pt', weights_only=False)
+    #     except:
+    #         print(f"No file found for lum {int(node)}")
 
     '''
     if(int(args.already_saved_hdvs_prot) == 0):
@@ -572,91 +470,47 @@ def main():
             except:
                 print(f"No file found for lum {int(node)}")
     
-    for node in nodes:
-            subdf = df_test[df_test["src"] == node]
-            lum_hdvs_test[node] = lum_to_hdv_levels(subdf)
-            try:
-                cos = torchhd.cosine_similarity(lum_hdvs[node],lum_hdvs_test[node])
-                print(f"Lum {int(node)} processed. Cosine = {cos}")
-            except:
-                print("")
     '''
-
     ''' ---- TESTING ---- '''
     print("Testing Classifiers...")
 
-    highest_cos = 0
-    ek_class = -1
-    results = [] # each component will have the class determined for each row. its order is the same as the rows order
-    df_test.to_json('test.json', orient='records', lines=True)
-    index = -1
-    for i in range(len(params_hdv_order)):
-        if params_hdv_order[i] == 'src':
-            index = i
-            break
+    #df_test = process_data("test15.json", parameters, None, None)
+    df_test = df_test.dropna()
+    df_test = df_test[df_test["src"] == 15]
+
+    i = 0
+    cosine_values = []
     for row in df_test.itertuples():
         hdv = entry_to_hdv_levels(row)
-        for node in nodes:
-            if lum_hdvs[node] == None:
-                continue
-            cos = torchhd.cosine_similarity(params_hdv[index][node],hdv)
-            if cos > highest_cos:
-                highest_cos = cos
-                ek_class = node
-        results.append(ek_class)
-        highest_cos = 0
-        ek_class = -1
+        if lum_hdvs[15] == None:
+            continue
+        cos = torchhd.cosine_similarity(lum_hdvs[15],hdv)
+        ham = torchhd.hamming_similarity(lum_hdvs[15],hdv)
+        print(f"Cosine: {cos} ||  Ham: {ham}")
+        cosine_values.append(cos)
 
-    labels = df_test_labeled['src'].astype(int).to_numpy()
-    num_correct = 0
-    num_wrong = 0
-    for i in range(len(results)):
-        if results[i] == labels[i]:
-            num_correct += 1
-        else:
-            num_wrong += 1
+        #if i ==39: break
+        i+= 1
 
-    print(f"Num Correct: {num_correct}, Num Wrong {num_wrong} -> Accuracy: {num_correct / (num_correct + num_wrong)}")
-    return
-    hdvfin = None
-    for row in df_test.itertuples():
-        try:
-            if hdvfin == None:
-                hdvfin = entry_to_hdv_levels(row)
-            else:
-                hdvfin = torchhd.bundle(hdvfin, entry_to_hdv_levels(row))
-        except:
-            print("nope")
-    hdvfin.sign()
-    cos = torchhd.cosine_similarity(lum_hdvs[15],hdvfin)
-    ham = torchhd.hamming_similarity(lum_hdvs[15],hdvfin)
-    print(f"Cosine: {cos} // Hamming {ham}")
-    return
-    
-    for node in nodes:
-            subdf = df_test[df_test["src"] == node]
-            hdv = lum_to_hdv(subdf)
-            if hdv != None:
-                lum_hdvs_test[node] = lum_to_hdv(subdf)
-                print(f"Lum {int(node)} processed")
+    ids = list(range(len(cosine_values)))  # eje X: 0 a 9999
 
-    for lum_id, lum_hdv in lum_hdvs.items():
-        try:
-            cos = torchhd.cosine_similarity(lum_hdv, lum_hdvs_test[lum_id])
-            cos2 = torchhd.cosine_similarity(lum_hdv, lum_hdvs_test[144])
-            ham = torchhd.hamming_similarity(lum_hdv, lum_hdvs_test[lum_id])
-            ham2 = torchhd.hamming_similarity(lum_hdv, lum_hdvs_test[144])
-        except:
-            print(f"Error with node {lum_id}")
-        print(f"Cosine similarity with {int(lum_id)}: {cos}")
-        print(f"Cosine similarity with {int(144)}: {cos2}")
-        print(f"Hamming distance with {int(lum_id)}: {ham}") # 0 Similar / 0.5 Orthogonal or Dissimilar / 1 Diametrically opposed
-        print(f"Hamming distance with {int(144)}: {ham2}") # 0 Similar / 0.5 Orthogonal or Dissimilar / 1 Diametrically opposed
-        print("################")
+    plt.figure(figsize=(12, 5))
+    plt.scatter(ids, cosine_values, s=10, alpha=0.6, color='dodgerblue')  # s ajusta el tamaño del punto
+    plt.ylim(0, 1)  # límites del eje Y
+    plt.yticks(np.arange(0, 1.05, 0.05))
+    plt.ylim(0, 1)
+    plt.xlabel('ID de entrada')
+    plt.ylabel('Similitud')
+    plt.title('Similitud por entrada')
+    plt.grid(True, linestyle='--', linewidth=0.5)
+    plt.tight_layout()
+    plt.savefig(f'{args.output_image}.png', dpi=300)
 
     mem = psutil.virtual_memory()
     uso_ram_gb = mem.used / (1024 ** 3)
     print(f"USO MEM RAM : {uso_ram_gb}")
+
+    return 
     '''
     - Creación de HDV
         · Cada variable tendrá realmente que ser una matriz en la que cada fila representa un valor distinto de una variable. Como nº de 
@@ -679,5 +533,6 @@ def main():
           para reforzarlo.
     
     '''
+
 if __name__ == "__main__":
     main()
