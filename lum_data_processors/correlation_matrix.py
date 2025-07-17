@@ -25,6 +25,21 @@ def extract_parameters(entry: Dict[str, Any], parameter_paths: List[str]) -> Dic
             continue 
     return extracted
 
+def extract_parameters_data_type2(entry: Dict[str, Any], parameter_paths: List[str]) -> Dict[str, Any]:
+    """
+    Extracts specified parameters from a JSON entry using hierarchical paths.
+    Returns a dictionary with parameter names and their values.
+    """
+    extracted = {}
+    for path in parameter_paths:
+        value = entry
+        try:
+            value = entry[path]
+            extracted[path] = value
+        except (KeyError, TypeError):
+            continue 
+    return extracted
+
 def parse_datetime(datetime_str: str) -> datetime:
     """
     Parses a datetime string in ISO format and returns a datetime object.
@@ -104,6 +119,58 @@ def process_data(input_file: str, parameter_paths: List[str], start_dt: datetime
                 continue  # Skip if no source_address
 
             params = extract_parameters(entry, parameter_paths)
+            if source_addr_diag is None:
+                params['src'] = source_addr_dat
+            else:
+                params['source_address'] = source_addr_diag
+
+            # Convertir las nuevas filas a un DataFrame
+            data.append(params)
+            timestamp_list.append(timestamp)
+
+    df = pd.DataFrame(data, dtype='float32')
+    df['timestamp'] = timestamp_list
+    return df
+
+def process_data_type2(input_file: str, parameter_paths: List[str], start_dt: datetime = None, end_dt: datetime = None) -> pd.DataFrame:
+    """
+    Reads the input file line by line and parses JSON objects.
+    Returns a list of JSON objects.
+    """
+    df = pd.DataFrame()
+    data = []
+    timestamp_list = []
+    with open(input_file, 'r') as infile:
+        for line_number, line in enumerate(infile, start=1):
+            line = line.strip()
+            if not line:
+                continue  # Skip empty lines
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError as e:
+                print(f"Warning: Skipping invalid JSON on line {line_number}: {e}")
+            
+            timestamp_str = get_timestamp(entry)
+            if not timestamp_str:
+                continue  # Skip if no timestamp
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str)
+            except ValueError:
+                print(f"Warning: Skipping entry with invalid timestamp format: {timestamp_str}")
+                continue
+                
+            # Filter by date range if specified
+            if start_dt and timestamp < start_dt:
+                continue
+            if end_dt and timestamp > end_dt:
+                continue
+
+            source_addr_diag = get_source_address(entry)
+            source_addr_dat = entry.get("src")
+            if source_addr_diag is None and source_addr_dat is None:
+                continue  # Skip if no source_address
+
+            params = extract_parameters_data_type2(entry, parameter_paths)
             if source_addr_diag is None:
                 params['src'] = source_addr_dat
             else:
