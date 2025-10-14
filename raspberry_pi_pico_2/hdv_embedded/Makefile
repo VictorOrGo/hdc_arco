@@ -6,7 +6,7 @@ CFLAGS = -Wall -O2 -Iinclude/
 LDFLAGS = -lm -lcjson
 
 # Archivos fuente y objetos
-SRC = src/hdc.c src/bytehd.c src/hdv_embedded.c
+SRC = src/hdc.c src/bytehd.c src/hdv_embedded_pc.c
 OBJ = $(SRC:.c=.o)
 
 # Ejecutable final
