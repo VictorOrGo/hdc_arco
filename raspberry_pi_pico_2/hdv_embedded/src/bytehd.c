@@ -4,13 +4,10 @@
 // #include <pico/stdlib.h>
 #include <stdlib.h>
 #include <stdio.h>
-#define false 0
-#define true 1
 
 int8_t DECODE_MAP[2] = {-1, 1}; // Map 0 to -1 and 1 to 1
 
 void gen_random_encoded_hdv(char hdv[LENGTH_HDV_BYTES]) {
-
     for (int i = 0; i < (LENGTH_HDV_BYTES / 8) + 1; i++) {
         hdv[i] = (rand() % 255) & 0xFF; // Random number between 0 and 255 to store a random byte
     }
@@ -23,9 +20,9 @@ void gen_random_encoded_hdv(char hdv[LENGTH_HDV_BYTES]) {
 }
 
 
-void encode_array_to_hdv(int8_t values[HDV_DIM], char hdv_bytes [LENGTH_HDV_BYTES]) {
+void encode_array_to_hdv(int16_t values[HDV_DIM], char hdv_bytes [LENGTH_HDV_BYTES]) {
 
-    if (ensure_hdv_bipolar(values) == false) {
+    if (ensure_hdv_bipolar(values) == 0) {
         printf("Error: HDV values must be either -1 or 1.\n");
         return;
     }
@@ -49,7 +46,7 @@ void encode_array_to_hdv(int8_t values[HDV_DIM], char hdv_bytes [LENGTH_HDV_BYTE
     }
 }
 
-void decode_hdv_to_array(char hdv_bytes[LENGTH_HDV_BYTES], int8_t values[HDV_DIM]) {
+void decode_hdv_to_array(char hdv_bytes[LENGTH_HDV_BYTES], int16_t values[HDV_DIM]) {
     for (int i = 0; i < LENGTH_HDV_BYTES; i++) { // for each byte
 
         int8_t bits_to_decode = 0;
@@ -104,7 +101,7 @@ int8_t set_number_in_hdv(char hdv_bytes[LENGTH_HDV_BYTES], uint16_t index, int8_
 void print_hdv(char hdv_bytes[LENGTH_HDV_BYTES]) {
     printf("[");
     for (int i = 0; i < HDV_DIM; i++) {
-        int8_t num = get_number_from_hdv(hdv_bytes, i);
+        int16_t num = get_number_from_hdv(hdv_bytes, i);
         if (num == 2) {
             printf("Error: get_number_from_hdv returned error value 2.\n");
             return;
