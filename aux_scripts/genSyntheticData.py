@@ -1,64 +1,73 @@
 import json
-from correlation_matrix import extract_parameters_data_type2, process_data_type2
 import numpy as np
 import pandas as pd
 
-def lower_and_higher_value(data_file, parameters):
-    '''
-    Funtion that will read the data_file and get for each parameter the higher and lower value
-    '''
-    result = {}
 
-    for parameter in parameters:
-        result[parameter] = {"higher":-1, "lower": 1e8}
+def calculate_new_value(value, alpha): # heteroscedastic noise ε∼N(0​,(α∣Xreal​∣)^2)
+    sigma = alpha * abs(value) 
+    epsilon = np.random.normal(0, sigma)
+    return value + epsilon
 
-    with open(data_file, 'r') as infile:
-        for line_number, line in enumerate(infile, start=1):
-            line = line.strip()
-            if not line:
-                continue  # Skip empty lines
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError as e:
-                print(f"Warning: Skipping invalid JSON on line {line_number}: {e}")
+parameters = ['travel_ms', 'hops', 'hours_in_emergency', 'hours_in_power', 'times_in_emergency', 'times_in_power', 'battery_level', 'link_quality', 'WBN_rssi_correction_val', 'cbmac_blacklisting_channels_min_to_40', 'cluster_channel', 'scanstat_avg_routers', 'network_scans_amount', 'trace_options.sequence', 'cbmac_details.cbmac_rx_messages_ack', 'cbmac_details.cbmac_rx_messages_unack', 'cbmac_details.cbmac_rx_ack_other_reasons', 'cbmac_details.cbmac_tx_ack_cca_fail', 'cbmac_details.cbmac_tx_ack_not_received', 'cbmac_details.cbmac_tx_messages_ack', 'cbmac_details.cbmac_tx_messages_unack', 'cbmac_details.cbmac_tx_cca_unack_fail', 'nexthop_details.advertised_cost', 'nexthop_details.next_hop_quality', 'nexthop_details.next_hop_rssi', 'nexthop_details.next_hop_address', 'cfmac_pending_broadcast_le_member', 'Unack_broadcast_channel']
 
-            extracted_params = extract_parameters_data_type2(entry, parameters)
+file = "lum_75_test.json"
 
-            for parameter in parameters:
-                if parameter not in extracted_params.keys(): continue
-                elif extracted_params[parameter] == None: continue
-                elif extracted_params[parameter] > result[parameter]["higher"]:
-                    result[parameter]["higher"] = int(extracted_params[parameter] + 10) # We add 10 in order to give a margin of different values
-                elif extracted_params[parameter] < result[parameter]["lower"]:
-                    result[parameter]["lower"] = int(extracted_params[parameter] - 10) # We substract 10 in order to give a margin of different values
+print("Processing Data...")
 
-    return result # Dict{dict} // result['hours_in_power'] = {'higher': 20555, 'lower': 44}
+batch_size = 100_000 
+batches = []  
 
-parameters = ['battery_level', 'hops', 'hours_in_emergency', 'times_in_emergency', 'times_in_power', 'two_in_one_battery_level', 'nexthop_details.advertised_cost', 'nexthop_details.sink_address', 'nexthop_details.next_hop_address', 'state', 'cbmac_details.cbmac_rx_ack_other_reasons', 'buffer_usage.average', 'outputState', 'buffer_usage.maximum', 'nexthop_details.next_hop_quality', 'nexthop_details.next_hop_rssi', 'cluster_channel', 'nexthop_details.next_hop_power', 'cluster_members', 'link_quality', 'hours_in_power', 'travel_ms', 'WBN_rssi_correction_val', 'cbmac_details.cbmac_load', 'cbmac_details.cbmac_rx_messages_ack', 'cbmac_details.cbmac_rx_messages_unack', 'cbmac_details.cbmac_tx_ack_cca_fail', 'cbmac_details.cbmac_tx_ack_not_received', 'cbmac_details.cbmac_tx_messages_ack', 'cbmac_details.cbmac_tx_messages_unack', 'cbmac_details.cbmac_tx_cca_unack_fail', 'network_scans_amount', 'cfmac_pending_broadcast_le_member', 'Unack_broadcast_channel']
+for i, line in enumerate(open(file, "r", encoding="utf-8"), start=1):
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        obj = json.loads(line)
+        batches.append(obj)
+    except json.JSONDecodeError:
+        continue
 
-file = "/home/victor/hdvExamples/lum15Train.json"
-ranges = lower_and_higher_value(file,parameters)
+    if len(batches) >= batch_size:
+        batch_df = pd.json_normalize(batches)
+        if i == batch_size:
+            data = batch_df  
+        else:
+            data = pd.concat([data, batch_df], ignore_index=True)
+        batches.clear()
+        print(f"Procesadas {i:,} líneas...")
 
-df = process_data_type2('/home/victor/hdvExamples/lum15Test.json', parameters, None, None)
-result_df = None
-while parameters:
-    df_aux = df.head(100).copy()
-    for i in range(len(df_aux)):
-        for parameter in parameters:
-            x = df_aux.at[i, parameter]
-            if pd.isna(x):
-                pass
-            else: 
-                std = abs(1 * x)  # 0.1 = 10% de desviación estándar
-                if std == 0: std = 1
+if batches:
+    batch_df = pd.json_normalize(batches)
+    data = pd.concat([data, batch_df], ignore_index=True) if "data" in locals() else batch_df
 
-                random_val = np.random.normal(loc=x, scale=std)
-                df_aux.at[i, parameter] = round(abs(random_val))
-    result_df = pd.concat([result_df, df_aux], ignore_index=True)
-    parameters.pop(0)
-            
+np.random.seed(42)
 
-result_df['timestamp'] = pd.to_datetime(result_df['timestamp'])
-result_df['timestamp'] = result_df['timestamp'].apply(lambda x: x.isoformat())
-result_df.to_json('lum15TestSyntheticDes1.json', orient='records', lines=True)
+df_aux = data.copy()
 
+for param in parameters:
+    des_std = data[param].std()
+    if param in data.columns:
+        alpha = 0.01  # Light noise	0.01 – 0.05 // Medium noise	0.05 – 0.2. // Strong noise	0.2 – 0.5 
+        df_aux[param] = data[param].apply(lambda x: calculate_new_value(x, alpha) if pd.notnull(x) else x)
+
+df_aux.to_json('lum_75_Test_Synthetic_Alpha_005.json', orient='records', lines=True)
+
+df_aux = data.copy()
+
+for param in parameters:
+    des_std = data[param].std()
+    if param in data.columns:
+        alpha = 0.2  
+        df_aux[param] = data[param].apply(lambda x: calculate_new_value(x, alpha) if pd.notnull(x) else x)
+
+df_aux.to_json('lum_75_Test_Synthetic_Alpha_02.json', orient='records', lines=True)
+
+df_aux = data.copy()
+
+for param in parameters:
+    des_std = data[param].std()
+    if param in data.columns:
+        alpha = 0.5  
+        df_aux[param] = data[param].apply(lambda x: calculate_new_value(x, alpha) if pd.notnull(x) else x)
+
+df_aux.to_json('lum_75_Test_Synthetic_Alpha_05.json', orient='records', lines=True)
