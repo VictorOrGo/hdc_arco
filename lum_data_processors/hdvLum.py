@@ -3,7 +3,7 @@ import torchhd
 import pandas as pd
 import numpy as np
 import argparse
-from correlation_matrix import process_data, process_data_type2, discover_all_parameters, extract_parameters, extract_parameters_data_type2
+from correlation_matrix import discover_all_parameters
 import sys
 import json
 import psutil
@@ -24,6 +24,37 @@ params_hdv_order = []
 
 hdv_matrices_path = 'hdv_matrices'
 hdv_prototypes_path = 'hdv_prototypes'
+
+def process_data(file_path, parameters):
+    batch_size = 100_000  # número de líneas por lote
+    batches = []  # para acumulación temporal
+
+    for i, line in enumerate(open(file_path, "r", encoding="utf-8"), start=1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+            batches.append(obj)
+        except json.JSONDecodeError:
+            continue
+
+        # cada cierto número de líneas, convertimos y guardamos en disco o acumulamos
+        if len(batches) >= batch_size:
+            batch_df = pd.json_normalize(batches)
+            if i == batch_size:
+                data = batch_df  # primer lote
+            else:
+                data = pd.concat([data, batch_df], ignore_index=True)
+            batches.clear()
+
+    # procesar el resto
+    if batches:
+        batch_df = pd.json_normalize(batches)
+        data = pd.concat([data, batch_df], ignore_index=True) if "data" in locals() else batch_df
+    
+    #nos quedamos unicamente con las columnas que nos interesan
+    return data[parameters]
 
 def lower_and_higher_value(data_file, parameters):
     '''
@@ -202,7 +233,6 @@ def range_hdv_levels(higher, lower, vector_size, parameter, num_levels):
 
     params_hdv_order.append(parameter)
     params_hdv.append(matrix)
-    print(f"Matriz de HDVs creada para {parameter}")
 
 def range_hdv_levels_secuencial(higher, lower, vector_size, parameter, num_levels):
     '''
@@ -396,6 +426,7 @@ def main():
     parser.add_argument('--k_classes', help="Number of classes", default=10)
     parser.add_argument('--output_image', help="Name of output image")
     parser.add_argument('--synthetic_file', help="Name of the file with synthetic data")
+    parser.add_argument('--test_file', help="Name of the file with test data")
     args = parser.parse_args()
 
     '''
@@ -441,84 +472,31 @@ def main():
     habíamos generado anteriormente. Estos HDVs irán agregando su información al anterior según se vayan procesando (mismo procedimiento que con el HDV
     prototipo). El HDV resultante de la agregación de los HDVs de las variables será el HDV que representa a la luminaria para esa entrada de datos.
     '''
+  
 
     '''"------------- DATA PROCESSING --------------"'''
-    
-    print("Processing Data...")
+
+    print("Processing Data...")    
     lum_hdvs = {} # key = class, value = hdv
-    df_train = process_data(args.data_file, parameters, None, None) # Tests done with "/home/victor/hdvExamples/lum15Train.json"
-    df_train = df_train.dropna()
-    df_train = df_train.drop(columns=['src','timestamp'])
+    df_train = process_data(args.data_file, parameters)
 
-    # df_train = df_train[df_train["src"] == 15]
-    # df_test = df_test[df_test["src"] == 15]
-    # df_train['timestamp'] = pd.to_datetime(df_train['timestamp'])
-    # df_train['timestamp'] = df_train['timestamp'].apply(lambda x: x.isoformat())
-    # df_train.to_json('lum15Train.json', orient='records', lines=True)
-    # df_test['timestamp'] = pd.to_datetime(df_test['timestamp'])
-    # df_test['timestamp'] = df_test['timestamp'].apply(lambda x: x.isoformat())
-    # df_test.to_json('lum15Test.json', orient='records', lines=True)
+    df_test_real = process_data(args.test_file, parameters)
+    df_test_real['classification'] = 'r'
 
-    # nodes = df['src'].unique()
+    df_test_synth = process_data(args.synthetic_file, parameters)
+    df_test_synth['classification'] = 's'
 
-    "------------- SEND DATA TO RP PICO 2 --------------"
+    print(f"Num real:{len(df_test_real)} Num synth:{len(df_test_synth)}")
+    df_test = pd.concat([df_test_real, df_test_synth], ignore_index=True)
+    df_test = df_test.sample(frac=1, random_state=42).reset_index(drop=True)
 
-    # ser = serial.Serial('/dev/ttyACM0', 115200)
-    # time.sleep(2)  # Espera a que se inicie
-
-    # print("sending columns names...")
-    # columns_line = ','.join(df_train.columns) + '\n'
-    # ser.write(columns_line.encode('utf-8'))
-    # time.sleep(0.1)
-    # ser.close()
-    # return
-    # Enviar filas
-
-    # print("Sending training rows...")
-    # nlin = 1
-    # rec = 0
-    # for row in df_train.itertuples(index=False):
-    #     row_line = ','.join(map(str, row)) + '\n'
-    #     ser.write(row_line.encode('utf-8'))
-    #     time.sleep(0.1)
-    #     nlin += 1
-    # ser.write(b'stop\n')
-
-    # print("Processing testing data")
-    # df_test_real = process_data("/home/victor/hdvExamples/lum15Test.json", parameters, None, None)
-    # df_test_real = df_test_real.dropna()
-    # df_test_real['classification'] = 'r'
-    # df_test_synth = process_data(args.synthetic_file, parameters, None, None)
-    # df_test_synth['classification'] = 's'
-    # df_test_synth = df_test_synth.dropna()
-    # df_test_synth = df_test_synth.sample(n=int(len(df_test_real)*0.1), random_state=42)
-    # print(f"Num real:{len(df_test_real)} Num synth:{len(df_test_synth)}")
-    # df_test = pd.concat([df_test_real, df_test_synth], ignore_index=True)
-    # df_test = df_test.sample(frac=1, random_state=42).reset_index(drop=True)
-    # df_test = df_test.dropna()
-    # df_test = df_test.drop(columns=['src','timestamp'])
-
-    # print("Sending testing rows...")
-    # nlin = 0
-    # for row in df_test.itertuples(index=False):
-    #     row_line = ','.join(map(str, row)) + '\n'
-    #     ser.write(row_line.encode('utf-8'))
-    #     time.sleep(0.1)
-    #     #print(f"Enviando entrada {nlin}")
-    #     # while True:
-    #     #     respuesta = ser.readline().decode().strip()
-    #     #     if respuesta == "OK":
-    #     #         print("Recibido OK, enviando linea")
-    #     #         break
-    # ser.write(b'stop\n')
-    # ser.close()
-    # print("done")
-    # return
+    print(f"Total train entries:{len(df_train)}")
+    print(f"Total test entries:{len(df_test)}")
 
     "------------- ENCODE LUMS --------------"
 
     time_init_train = time.time()
-    lum_hdvs[15] = lum_to_hdv_levels(df_train)
+    lum_hdvs[75] = lum_to_hdv_levels(df_train)
     print(f"total_training_time:{time.time()-time_init_train}")
     print(f"total_size_hdv_levels:{asizeof.asizeof(params_hdv)}")
 
@@ -540,64 +518,77 @@ def main():
 
     '''
 
+    ''' ---- SETTING THRESHOLD FOR CLASSIFICATION ----'''
+    # T = M + 2 * N where M is the average distance between sample and prototype and n is the std deviation
+
+    print("Calculating threshold...")
+
+    similities = []
+    for entry in df_train.itertuples():
+        hdv = entry_to_hdv_levels(entry)
+        if hdv == None:
+            print("Train entry has no valid values, continuing with next entry")
+            continue
+        cos = torchhd.cosine_similarity(lum_hdvs[75],hdv)
+        similities.append(cos)
+
+    mean = np.mean(similities)
+    std_dev = np.std(similities)
+    threshold = mean - 2 * std_dev
+    print(f"threshold:{threshold} // mean:{mean}, std_dev:{std_dev}, ")
+
     '''------------- TESTING --------------'''
-    #print("Testing Classifiers...")
-    df_test_real = process_data("/home/victor/hdvExamples/lum15Test.json", parameters, None, None)
-    df_test_real = df_test_real.dropna()
-    df_test_real['classification'] = 'r'
-    df_test_synth = process_data(args.synthetic_file, parameters, None, None)
-    df_test_synth['classification'] = 's'
-    df_test_synth = df_test_synth.dropna()
-    df_test_synth = df_test_synth.sample(n=int(len(df_test_real)*0.1), random_state=42)
-    print(f"Num real:{len(df_test_real)} Num synth:{len(df_test_synth)}")
-    df_test = pd.concat([df_test_real, df_test_synth], ignore_index=True)
-    df_test = df_test.sample(frac=1, random_state=42).reset_index(drop=True)
-    df_test = df_test.dropna()
-    df_test = df_test[df_test["src"] == 15]
 
     i = 0
-    score_values_threshold_80 = []
-    score_values_threshold_85 = []
-    score_values_threshold_90 = []
-    score_values_threshold_95 = []
+    hdc_classification = []
     cosine_values = []
     start = time.time()
     for row in df_test.itertuples():
         hdv = entry_to_hdv_levels(row)
-        if lum_hdvs[15] == None:
-            continue
-        cos = torchhd.cosine_similarity(lum_hdvs[15],hdv)
+        cos = torchhd.cosine_similarity(lum_hdvs[75],hdv)
 
-        if cos >= 0.95: score_values_threshold_95.append('r')
-        else: score_values_threshold_95.append('s')
-        if cos >= 0.90: score_values_threshold_90.append('r')
-        else: score_values_threshold_90.append('s')
-        if cos >= 0.85: score_values_threshold_85.append('r')
-        else: score_values_threshold_85.append('s')
-        if cos >= 0.80: score_values_threshold_80.append('r')
-        else: score_values_threshold_80.append('s')
+        if cos >= threshold: hdc_classification.append('r')
+        else: hdc_classification.append('s')
         cosine_values.append(cos)
-        #if i ==39: break
         i+= 1
 
-    score95 = 0
-    score90 = 0
-    score85 = 0
-    score80 = 0
-    for j in range(len(score_values_threshold_95)):
+    score_real = 0
+    score_synth = 0
+    for j in range(len(hdc_classification)):
         comp = df_test['classification'].iloc[j]
-        if score_values_threshold_95[j] == comp: score95 += 1
-        if score_values_threshold_90[j] == comp: score90 += 1
-        if score_values_threshold_85[j] == comp: score85 += 1
-        if score_values_threshold_80[j] == comp: score80 += 1
-    precision95 = score95 / (len(score_values_threshold_95))
-    precision90 = score90 / (len(score_values_threshold_90))
-    precision85 = score85 / (len(score_values_threshold_85))
-    precision80 = score80 / (len(score_values_threshold_80))
+        if hdc_classification[j] == comp and comp == 'r':
+            score_real += 1
+        elif hdc_classification[j] == comp and comp == 's':
+            score_synth += 1
+    accuracy = (score_real + score_synth) / (len(hdc_classification))
+
 
     finish = time.time()
 
-    print(f'{precision80}, {precision85}, {precision90}, {precision95}')
+    TP = score_real
+    TN = score_synth
+    FP = len(df_test_synth) - score_synth
+    FN = len(df_test_real) - score_real
+
+    accuracy = (TP + TN) / (TP + TN + FP + FN)
+    TPR = TP / (TP + FN)
+    TNR = TN / (TN + FP)
+    FPR = FP / (FP + TN)
+    FNR = FN / (FN + TP)
+    PPV = TP / (TP + FP)   # precision
+    NPV = TN / (TN + FN)
+    balanced_accuracy = (TPR + TNR) / 2
+    f1_score = 2 * (PPV * TPR) / (PPV + TPR)
+
+    print(f"Accuracy (ACC - Exactitud): {accuracy}") # exactitud es la fracción de predicciones correctas sobre el total de predicciones
+    print(f"TPR (True Positive Rate - Sensibilidad / Recall): {TPR}") # Es la fracción de ejemplos positivos reales que han sido clasificados como positivos por el clasificador
+    print(f"TNR (True Negative Rate - Especificidad): {TNR}") # especificadad es la fracción de ejemplos negativos reales que han sido clasificados como negativos por el clasificador
+    print(f"FPR (False Positive Rate - Tasa de falsos positivos): {FPR}") # error negativo es la fracción de ejemplos negativos reales que han sido clasificados como positivos por el clasificador
+    print(f"FNR (False Negative Rate - Tasa de falsos negativos): {FNR}") # error positivo es la fracción de ejemplos positivos reales que han sido clasificados como negativos por el clasificador
+    print(f"PPV (Positive Predictive Value - Precisión): {PPV}") # precisión es la fracción de ejemplos clasificados como positivos que son realmente positivos
+    print(f"NPV (Negative Predictive Value - Valor predictivo negativo): {NPV}") # valor predictivo negativo es la fracción de ejemplos clasificados como negativos que son realmente negativos
+    print(f"Balanced Accuracy (BA - Exactitud balanceada): {balanced_accuracy}") # la exactitud balanceada es la media aritmética de la sensibilidad y la especificidad
+    print(f"F1 (F1 Score - Media armónica Precision/Recall): {f1_score}") # la media armónica entre la precisión y el recall
     print(f"time_testing_elapsed:{finish-start}")
 
     return
