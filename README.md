@@ -28,7 +28,7 @@ Script to merge the json data of diagnosis with the json data of status
 
 Script to generate synthetic data
 
-## examples
+## hdc_examples
 
 This directory contains various examples where HDVs are implemented to solve different problems.
 
@@ -47,13 +47,17 @@ This example proposes the use of HDVs to encode recipes and obtain the following
 
 This example proposes the use of HDVs to encode and classify proteins depending on whether they are of human origin or come from yeast.
 
-## data
+### data
 
 This directory contains the different datasets used in the HDV examples.
 
 - `recipesData.csv` is used in the `hdvRecipes.py` example.  
 - `human.fasta` is used in the `hdvProteins.py` example.  
 - `yeast.fasta` is used in the `hdvProteins.py` example.
+
+## data
+
+This directory contains the training and testing data, both synthetic and real, used in our HDC experiments 
 
 ## lum_data_processors
 
@@ -97,8 +101,5 @@ This directory contains the filters used by the different scripts.
 
 This directory contains the scripts and code that implements HDC in the Raspberry Pi Pico 2
 
-## synthetic_data
-
-This directory contains `.json` files with synthetic luminaire data entries for performing different tests.
 
 
