@@ -1,4 +1,4 @@
-#include "bytehd.h"
+#include "bytehd_lib.h"
 #include "hdc.h"
 // #include <pico/rand.h>
 // #include <pico/stdlib.h>
@@ -20,7 +20,7 @@ void gen_random_encoded_hdv(char hdv[LENGTH_HDV_BYTES]) {
 }
 
 
-void encode_array_to_hdv(int16_t values[HDV_DIM], char hdv_bytes [LENGTH_HDV_BYTES]) {
+void encode_array_to_hdv(int8_t values[HDV_DIM], char hdv_bytes [LENGTH_HDV_BYTES]) {
 
     if (ensure_hdv_bipolar(values) == 0) {
         printf("Error: HDV values must be either -1 or 1.\n");
@@ -46,7 +46,7 @@ void encode_array_to_hdv(int16_t values[HDV_DIM], char hdv_bytes [LENGTH_HDV_BYT
     }
 }
 
-void decode_hdv_to_array(char hdv_bytes[LENGTH_HDV_BYTES], int16_t values[HDV_DIM]) {
+void decode_hdv_to_array(char hdv_bytes[LENGTH_HDV_BYTES], int8_t values[HDV_DIM]) {
     for (int i = 0; i < LENGTH_HDV_BYTES; i++) { // for each byte
 
         int8_t bits_to_decode = 0;

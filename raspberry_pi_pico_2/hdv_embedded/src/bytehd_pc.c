@@ -7,14 +7,17 @@
 #include <string.h>
 #include <malloc.h>
 #include "hdc.h"
-#include "bytehd.h"
+#include "bytehd_lib.h"
 #include <limits.h>
 #include <fcntl.h>
-#include <termios.h>
 #include <unistd.h>
 
-#define M 39
-#define NORMALIZATION_SUM 100
+
+// D_values = [1000, 1500, 2000, 2500, 3000, 3500, 4000]
+// M_values = [74,    54,   39,   26,   21,   16,   13]
+
+#define M 2732
+#define NORMALIZATION_SUM 127
 #define FEATURES 32
 
 
@@ -61,7 +64,7 @@ typedef struct {
     float higher;
 } range_t;
 
-int count_differences(int16_t *hdv1, int16_t *hdv2, int dim) {
+int count_differences(int8_t *hdv1, int8_t *hdv2, int dim) {
     int diff = 0;
     for (int i = 0; i < dim; i++) {
         if (hdv1[i] != hdv2[i]) diff++;
@@ -69,11 +72,9 @@ int count_differences(int16_t *hdv1, int16_t *hdv2, int dim) {
     return diff;
 }
 
-uint16_t range_hdv_levels(char **matrix_f, int num_features, int m_levels){
+uint8_t range_hdv_levels(char **matrix_f, int num_features, int m_levels){
     
     gen_random_encoded_hdv(matrix_f[0]);
-    int16_t hdv_array[HDV_DIM];
-    decode_hdv_to_array(matrix_f[0], hdv_array);
     
     int b = HDV_DIM / (2 * (m_levels - 1));
     if (b == 0) {
@@ -143,8 +144,10 @@ void get_hdv_level(char **matrix_f, char *result_hdv, float lower, float higher,
     float level_lower_bound, level_upper_bound;
     if(value < lower){
         memcpy(result_hdv, matrix_f[0], LENGTH_HDV_BYTES * sizeof(char)); // Copy the corresponding HDV to result_hdv
+        return;
     } else if (value > higher) {
         memcpy(result_hdv, matrix_f[m_levels-1], LENGTH_HDV_BYTES * sizeof(char)); // Copy the corresponding HDV to result_hdv
+        return;
     }
 
     for(int i = 0; i < m_levels; i++){
@@ -243,7 +246,7 @@ float std_desv(float data[], int n, float mean) {
 }
 
 int main() {
-    srand(106); // Seed for reproducibility
+    srand(256); // Seed for reproducibility
 
     printf("D = %d M = %d\n", HDV_DIM, M);
 
@@ -346,16 +349,16 @@ int main() {
     // ***************************** TRAINING ******************************
     // *********************************************************************
 
-    FILE *fp = fopen("/home/victor/hdc_arco/lum_75_train.json", "r");
+    FILE *fp = fopen("/home/victor/hdc_arco/data/lum_75_train.json", "r");
     if (!fp) {
         perror("Error opening file");
         return 1;
     }
 
-    int16_t prot_hdv[HDV_DIM];
-    int16_t sample_hdv[HDV_DIM];
+    int8_t prot_hdv[HDV_DIM];
+    int8_t sample_hdv[HDV_DIM];
     char aux_hdv[LENGTH_HDV_BYTES];
-    int16_t aux_hdv_decoded[HDV_DIM];
+    int8_t aux_hdv_decoded[HDV_DIM];
     char *line = NULL;
     int num_line = 0; 
     int num_lines_skipped = 0;
@@ -384,10 +387,10 @@ int main() {
             higher = ranges[i].higher;
             get_hdv_level(vector_matrices[i], aux_hdv, lower, higher, value, M);
 
-            decode_hdv_to_array(aux_hdv, aux_hdv_decoded); // Decode the HDV from bytes to int16_t array
+            decode_hdv_to_array(aux_hdv, aux_hdv_decoded); // Decode the HDV from bytes to int8_t array
             
             if (i == 0) {
-                memcpy(sample_hdv, aux_hdv_decoded, HDV_DIM * sizeof(int16_t)); // Initialize sample_hdv with the first feature HDV
+                memcpy(sample_hdv, aux_hdv_decoded, HDV_DIM * sizeof(int8_t)); // Initialize sample_hdv with the first feature HDV
                 continue;
             }
             bundle_hdv(sample_hdv, aux_hdv_decoded, sample_hdv); // Accumulate the HDVs of each feature
@@ -396,7 +399,7 @@ int main() {
         normalize_bipolar_hdv(sample_hdv); 
 
         if(num_line == 0) {
-            memcpy(prot_hdv, sample_hdv, HDV_DIM * sizeof(int16_t)); // Initialize prototype HDV with the first sample HDV
+            memcpy(prot_hdv, sample_hdv, HDV_DIM * sizeof(int8_t)); // Initialize prototype HDV with the first sample HDV
         }
         else if (bundle_count >= NORMALIZATION_SUM) {
             bundle_hdv(prot_hdv, sample_hdv, prot_hdv); // Accumulate the sample HDVs to create the prototype HDV
@@ -429,7 +432,7 @@ int main() {
     // ********************** THRESHOLD CALCULATION ************************
     // *********************************************************************
 
-    fp = fopen("/home/victor/hdc_arco/lum_75_train.json", "r");
+    fp = fopen("/home/victor/hdc_arco/data/lum_75_train.json", "r");
     if (!fp) {
         perror("Error opening file");
         return 1;
@@ -461,10 +464,10 @@ int main() {
             higher = ranges[i].higher;
             get_hdv_level(vector_matrices[i], aux_hdv, lower, higher, value, M);
 
-            decode_hdv_to_array(aux_hdv, aux_hdv_decoded); // Decode the HDV from bytes to int16_t array
+            decode_hdv_to_array(aux_hdv, aux_hdv_decoded); // Decode the HDV from bytes to int8_t array
             
             if (i == 0) {
-                memcpy(sample_hdv, aux_hdv_decoded, HDV_DIM * sizeof(int16_t)); // Initialize sample_hdv with the first feature HDV
+                memcpy(sample_hdv, aux_hdv_decoded, HDV_DIM * sizeof(int8_t)); // Initialize sample_hdv with the first feature HDV
                 continue;
             }
             bundle_hdv(sample_hdv, aux_hdv_decoded, sample_hdv); // Accumulate the HDVs of each feature
@@ -497,7 +500,7 @@ int main() {
     int tp = 0; // True positives
     int tn = 0; // True negatives
 
-    fp = fopen("/home/victor/hdc_arco/lum_75_test_combined_005.json", "r");
+    fp = fopen("/home/victor/hdc_arco/data/lum_75_test_combined_05.json", "r");
     if (!fp) {
         perror("Error opening file");
         return 1;
@@ -540,10 +543,10 @@ int main() {
             higher = ranges[i].higher;
             get_hdv_level(vector_matrices[i], aux_hdv, lower, higher, value, M);
 
-            decode_hdv_to_array(aux_hdv, aux_hdv_decoded); // Decode the HDV from bytes to int16_t array
+            decode_hdv_to_array(aux_hdv, aux_hdv_decoded); // Decode the HDV from bytes to int8_t array
             
             if (i == 0) {
-                memcpy(sample_hdv, aux_hdv_decoded, HDV_DIM * sizeof(int16_t)); // Initialize sample_hdv with the first feature HDV
+                memcpy(sample_hdv, aux_hdv_decoded, HDV_DIM * sizeof(int8_t)); // Initialize sample_hdv with the first feature HDV
                 continue;
             }
             bundle_hdv(sample_hdv, aux_hdv_decoded, sample_hdv); // Accumulate the HDVs of each feature
@@ -576,6 +579,7 @@ int main() {
     end = clock();
     elapsed = ((double)(end - start)) / CLOCKS_PER_SEC;
     printf("Testing time: %f (s)\n", elapsed);
+    printf("Average inference time: %f (s)\n", elapsed / total);
 
     size_t total_mem = FEATURES * sizeof(char**) + FEATURES * M * sizeof(char*) + FEATURES * M * LENGTH_HDV_BYTES * sizeof(char);
     printf("Memory matrix: %zu bytes (%ld KB, %ld MB)\n", total_mem, total_mem / 1024, total_mem / (1024 * 1024));

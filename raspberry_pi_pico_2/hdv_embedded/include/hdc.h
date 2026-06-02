@@ -3,8 +3,11 @@
 
 #include <stdint.h>
 
-#define HDV_DIM 10000
+#define HDV_DIM 8192 // 16384, 8192, 4096, 2048, 1024 
+#define MY_RAND_MAX 0x7fffffff
 
+int my_rand(void);
+void my_srand(unsigned int seed);
 void gen_random_bipolar_hdv(int8_t hdv[HDV_DIM]);
 int8_t ensure_hdv_bipolar(int8_t hdv[HDV_DIM]);
 void normalize_bipolar_hdv(int8_t hdv[HDV_DIM]);
@@ -12,5 +15,6 @@ void bundle_hdv(int8_t hdv1[HDV_DIM], int8_t hdv2[HDV_DIM], int8_t result[HDV_DI
 void bind_hdv(int8_t hdv1[HDV_DIM], int8_t hdv2[HDV_DIM], int8_t result[HDV_DIM]);
 void permute_hdv(int8_t hdv[HDV_DIM], int8_t result[HDV_DIM], int shift);
 float cosine_similarity(int8_t hdv1[HDV_DIM], int8_t hdv2[HDV_DIM]);
+
 
 #endif

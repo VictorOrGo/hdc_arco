@@ -5,14 +5,22 @@ import gc
 from math import sqrt
 import time
 
-HDV_DIM = 1000
-M = 74
+# D = 1000 M = 92
+# D = 1500 M = 65
+# D = 2000 M = 48
+# D = 2500 M = 35
+# D = 3000 M = 26
+# D = 3500 M = 22
+# D = 4000 M = 20
+
+
+HDV_DIM = 4000
+M = 13
 CODE_MAP = {1: 0b0, -1: 0b1} # Codification of the different values that our HDV can take
 DECODE_MAP = {0b0: 1, 0b1: -1}
 NUMBERS_IN_A_BYTE = 8
 
-RANGES = {'battery_level': {'higher': 4102, 'lower': 2810}, 'hops': {'higher': 11, 'lower': -9}, 'hours_in_emergency': {'higher': 10, 'lower': -10}, 'times_in_emergency': {'higher': 10, 'lower': -10}, 'times_in_power': {'higher': 10, 'lower': -10}, 'two_in_one_battery_level': {'higher': 10, 'lower': -10}, 'nexthop_details.advertised_cost': {'higher': 12, 'lower': -8}, 'nexthop_details.sink_address': {'higher': 1010, 'lower': 990}, 'nexthop_details.next_hop_address': {'higher': 1010, 'lower': 990}, 'state': {'higher': 11, 'lower': -9}, 'cbmac_details.cbmac_rx_ack_other_reasons': {'higher': 16617, 'lower': 15798}, 'buffer_usage.average': {'higher': 17, 'lower': -3}, 'outputState': {'higher': 16651, 'lower': 56}, 'buffer_usage.maximum': {'higher': 31, 'lower': -2}, 'nexthop_details.next_hop_quality': {'higher': 263, 'lower': 244}, 'nexthop_details.next_hop_rssi': {'higher': -1, 'lower': -68}, 'cluster_channel': {'higher': 46, 'lower': -7}, 'nexthop_details.next_hop_power': {'higher': 10, 'lower': -14}, 'cluster_members': {'higher': 15, 'lower': -5}, 'link_quality': {'higher': 265, 'lower': 112}, 'hours_in_power': {'higher': 4053, 'lower': 3504}, 'travel_ms': {'higher': 166, 'lower': -10}, 'WBN_rssi_correction_val': {'higher': -1, 'lower': -14}, 'cbmac_details.cbmac_load': {'higher': 31, 'lower': -3}, 'cbmac_details.cbmac_rx_messages_ack': {'higher': 65535, 'lower': -5}, 'cbmac_details.cbmac_rx_messages_unack': {'higher': 26917, 'lower': 10758}, 'cbmac_details.cbmac_tx_ack_cca_fail': {'higher': 65541, 'lower': -4}, 'cbmac_details.cbmac_tx_ack_not_received': {'higher': 65536, 'lower': 5}, 'cbmac_details.cbmac_tx_messages_ack': {'higher': 65538, 'lower': -3}, 'cbmac_details.cbmac_tx_messages_unack': {'higher': 64216, 'lower': 52374}, 'cbmac_details.cbmac_tx_cca_unack_fail': {'higher': 37410, 'lower': 36942}, 'network_scans_amount': {'higher': 153, 'lower': 98}, 'cfmac_pending_broadcast_le_member': {'higher': 41, 'lower': 21}, 'Unack_broadcast_channel': {'higher': 30, 'lower': 8}}
-THRESHOLD = 0.8
+RANGES = {'travel_ms': {'higher': 10.3422309835, 'lower': -11.129908607600001}, 'hops': {'higher': 9.9666576071, 'lower': -10.5285593448}, 'hours_in_emergency': {'higher': 10.7978661854, 'lower': -9.2021338146}, 'hours_in_power': {'higher': 10.5583666203, 'lower': -10.705300119}, 'times_in_emergency': {'higher': 11.0402503322, 'lower': -8.9597496678}, 'times_in_power': {'higher': 10.1804426598, 'lower': -9.8195573402}, 'battery_level': {'higher': 9.8756683545, 'lower': -9.3706225416}, 'link_quality': {'higher': 10.733673815, 'lower': -9.266326185}, 'WBN_rssi_correction_val': {'higher': 10.9541171806, 'lower': -11.7412827994}, 'cbmac_blacklisting_channels_min_to_40': {'higher': 9.681431759, 'lower': -10.2810097094}, 'cluster_channel': {'higher': 10.8128270088, 'lower': -9.6426633002}, 'scanstat_avg_routers': {'higher': 9.9393908084, 'lower': -10.0606091916}, 'network_scans_amount': {'higher': 11.4624569702, 'lower': -8.8622114835}, 'trace_options.sequence': {'higher': 10.7883938603, 'lower': -9.4283203761}, 'cbmac_details.cbmac_load': {'higher': 9.8509129535, 'lower': -11.3532607214}, 'cbmac_details.cbmac_rx_messages_ack': {'higher': 10.8331624216, 'lower': -11.643139228599999}, 'cbmac_details.cbmac_rx_messages_unack': {'higher': 9.2849584411, 'lower': -8.2238746191}, 'cbmac_details.cbmac_rx_ack_other_reasons': {'higher': 9.2607019221, 'lower': -10.7392980779}, 'cbmac_details.cbmac_tx_ack_cca_fail': {'higher': 10.8998948603, 'lower': -9.3067637164}, 'cbmac_details.cbmac_tx_ack_not_received': {'higher': 9.4613816643, 'lower': -8.4917809143}, 'cbmac_details.cbmac_tx_messages_ack': {'higher': 10.2657952991, 'lower': -10.920853884}, 'cbmac_details.cbmac_tx_messages_unack': {'higher': 11.635152705, 'lower': -8.7135986302}, 'cbmac_details.cbmac_tx_cca_unack_fail': {'higher': 11.0521759556, 'lower': -8.9506993171}, 'buffer_usage.average': {'higher': 10.3570059096, 'lower': -12.7949269663}, 'nexthop_details.advertised_cost': {'higher': 10.3007748668, 'lower': -10.2220550246}, 'nexthop_details.next_hop_quality': {'higher': 9.6393607259, 'lower': -8.8687137216}, 'nexthop_details.next_hop_rssi': {'higher': 9.4240177678, 'lower': -9.583995872}, 'nexthop_details.next_hop_power': {'higher': 10.5715385817, 'lower': -9.4284614183}, 'Installation quality.quality_indicator': {'higher': 10.5166860684, 'lower': -9.4833139316}, 'nexthop_details.next_hop_address': {'higher': 203, 'lower': 5}, 'cfmac_pending_broadcast_le_member': {'higher': 34, 'lower': 12}, 'Unack_broadcast_channel': {'higher': 21, 'lower': 6}}
 NORMALIZATION_SUM = 100
 
 TYPE_SIZES = {
@@ -192,31 +200,56 @@ def range_hdv_levels(higher, lower) -> tuple[dict[float, bytearray],list[float]]
 
     return matrix,keys
 
+
+random.seed(42)
 time_start_total = time.ticks_ms()
+
+# while True:
+#     print(f"M = {M}")
+#     hdv_matrices = {} 
+#     keys = None
+#     column_names = ['travel_ms', 'hops', 'hours_in_emergency', 'hours_in_power', 'times_in_emergency', 'times_in_power', 'battery_level', 'link_quality', 'WBN_rssi_correction_val', 'cbmac_blacklisting_channels_min_to_40', 'cluster_channel', 'scanstat_avg_routers', 'network_scans_amount', 'trace_options.sequence', 'cbmac_details.cbmac_load', 'cbmac_details.cbmac_rx_messages_ack', 'cbmac_details.cbmac_rx_messages_unack', 'cbmac_details.cbmac_rx_ack_other_reasons', 'cbmac_details.cbmac_tx_ack_cca_fail', 'cbmac_details.cbmac_tx_ack_not_received', 'cbmac_details.cbmac_tx_messages_ack', 'cbmac_details.cbmac_tx_messages_unack', 'cbmac_details.cbmac_tx_cca_unack_fail', 'buffer_usage.average', 'nexthop_details.advertised_cost', 'nexthop_details.next_hop_quality', 'nexthop_details.next_hop_rssi', 'nexthop_details.next_hop_power', 'Installation quality.quality_indicator', 'nexthop_details.next_hop_address', 'cfmac_pending_broadcast_le_member', 'Unack_broadcast_channel', 'classification']
+#     gc.collect()
+
+#     for param in column_names[:-1]: # We don't create HDV for the classification column
+#         hdv_matrices[param],order = range_hdv_levels(RANGES[param]['higher'], RANGES[param]['lower'])
+#     M += 1
 
 hdv_matrices = {} 
 keys = None
-column_names = ['battery_level', 'hops', 'hours_in_emergency', 'times_in_emergency', 'times_in_power', 'two_in_one_battery_level', 'state', 'outputState', 'cluster_channel', 'cluster_members', 'link_quality', 'hours_in_power', 'travel_ms', 'WBN_rssi_correction_val', 'network_scans_amount', 'cfmac_pending_broadcast_le_member', 'Unack_broadcast_channel', "classification"]
+column_names = ['travel_ms', 'hops', 'hours_in_emergency', 'hours_in_power', 'times_in_emergency', 'times_in_power', 'battery_level', 'link_quality', 'WBN_rssi_correction_val', 'cbmac_blacklisting_channels_min_to_40', 'cluster_channel', 'scanstat_avg_routers', 'network_scans_amount', 'trace_options.sequence', 'cbmac_details.cbmac_load', 'cbmac_details.cbmac_rx_messages_ack', 'cbmac_details.cbmac_rx_messages_unack', 'cbmac_details.cbmac_rx_ack_other_reasons', 'cbmac_details.cbmac_tx_ack_cca_fail', 'cbmac_details.cbmac_tx_ack_not_received', 'cbmac_details.cbmac_tx_messages_ack', 'cbmac_details.cbmac_tx_messages_unack', 'cbmac_details.cbmac_tx_cca_unack_fail', 'buffer_usage.average', 'nexthop_details.advertised_cost', 'nexthop_details.next_hop_quality', 'nexthop_details.next_hop_rssi', 'nexthop_details.next_hop_power', 'Installation quality.quality_indicator', 'nexthop_details.next_hop_address', 'cfmac_pending_broadcast_le_member', 'Unack_broadcast_channel', 'classification']
 gc.collect()
 free_mem = gc.mem_free()
 used_mem = gc.mem_alloc()
 total_mem = free_mem + used_mem
-for param in column_names[:-1]:
+
+for param in column_names[:-1]: # We don't create HDV for the classification column
     hdv_matrices[param],order = range_hdv_levels(RANGES[param]['higher'], RANGES[param]['lower'])
 time_end_matrix_creation = time.ticks_ms()
 time_elapsed_matrix_creation = time.ticks_diff(time_end_matrix_creation, time_start_total) /1000
 gc.collect()
+
 print("Matrices created")
-print("Memoria libre:", gc.mem_free(), "bytes")
-print("Memoria usada:", gc.mem_alloc(), "bytes")
-print("Diferencia de memoria:", abs(free_mem-gc.mem_free()), "bytes")
-size = size_of_my_dict(hdv_matrices)
-print("Memoria estimada:", size, "bytes")
+
+# print("Memoria libre:", gc.mem_free(), "bytes")
+# print("Memoria usada:", gc.mem_alloc(), "bytes")
+# print("Diferencia de memoria:", abs(free_mem-gc.mem_free()), "bytes")
+# size = size_of_my_dict(hdv_matrices)
+# print("Memoria estimada:", size, "bytes")
+
+'''-------------------------RECEIVE THRESHOLD-------------------------'''
+print("Waiting for threshold")
+line = sys.stdin.readline()
+if line:
+    threshold = float(line.strip())
+    print(f"Threshold set to: {threshold}")
+
 
 '''-------------------------TRAINING-------------------------'''
 hdv_prot = None
-bind_sum = 0
+bundle_sum = 0
 print("Training")
+
 while True:
     line = sys.stdin.readline()
     if not line:
@@ -225,7 +258,7 @@ while True:
     if line == 'stop\n': # The loop ends when the connection with the PC ends
         break
     values = line.strip().split(',')
-    if len(values) != len(column_names[:-1]):
+    if len(values) != len(column_names)-1:
         print("Row differs from expected")
         continue
 
@@ -242,32 +275,35 @@ while True:
             aux = decode_hdv_to_array(hdv_matrices[key][nearest_value])
             hdv_entry = bundle_hdv(hdv_entry, aux)
     
+    hdv_entry = normalize_hdv(hdv_entry)
+
     if hdv_prot == None: # Firts loop iteration
         hdv_prot = hdv_entry
-
-    elif bind_sum >= NORMALIZATION_SUM and hdv_prot != None and hdv_entry != None: # Normalization of the HDV 
-        hdv_entry = normalize_hdv(hdv_entry)
-        hdv_prot = bundle_hdv(hdv_prot, hdv_entry)
-        hdv_prot = normalize_hdv(hdv_prot)
-        bind_sum = 0
-
-    elif hdv_prot != None and hdv_entry != None: # No normalization of the HDV
-        hdv_entry = normalize_hdv(hdv_entry)
-        hdv_prot = bundle_hdv(hdv_prot, hdv_entry)
-        bind_sum += 1
+    else:
+        if bundle_sum >= NORMALIZATION_SUM: # Normalization of the HDV 
+            hdv_prot = bundle_hdv(hdv_prot, hdv_entry)
+            hdv_prot = normalize_hdv(hdv_prot)
+            bundle_sum = 0
+        else: # No normalization of the HDV
+            hdv_prot = bundle_hdv(hdv_prot, hdv_entry)
+            bundle_sum += 1
+    
+    hdv_entry = None
     
 if hdv_prot != None: hdv_prot = normalize_hdv(hdv_prot)
 
 time_end_training = time.ticks_ms()
 time_elapsed_training = time.ticks_diff(time_end_training, time_end_matrix_creation) /1000
+
 '''-------------------------TESTING-------------------------'''
 
 print("Training finished. Starting classification.")
 total = 0
-real_classification = []
-results85 = []
-results90 = []
-results95 = []
+correct_real = 0
+correct_synthetic = 0
+real_entry = 0
+synthetic_entry = 0
+real_classification = None
 while True:
     line = sys.stdin.readline()
     if not line:
@@ -276,7 +312,7 @@ while True:
     if line == 'stop\n': # The loop ends when the connection with the PC ends
         break
     values = line.strip().split(',')
-    if len(values) != len(column_names):
+    if len(values) != len(column_names): 
         print("Row differs from expected")
         print(values)
         print("----------------------------------------------")
@@ -288,8 +324,14 @@ while True:
 
     hdv_entry = None
     for param, value in row_dict.items(): # HDV data entry
+        if value == None:
+            continue
         if param == "classification" :
-            real_classification.append(value)
+            real_classification = value
+            if real_classification == 'r':
+                real_entry += 1
+            else:
+                synthetic_entry += 1
             continue
         indices = hdv_matrices[param].keys()
         nearest_value = min(indices, key=lambda v: abs(v - float(value)))
@@ -302,30 +344,27 @@ while True:
     if hdv_entry != None and hdv_prot != None:
         hdv_entry = normalize_hdv(hdv_entry)
         cos = cosine_similarity(hdv_prot, hdv_entry)
-        if cos >= 0.85: results85.append('r')
-        else: results85.append('s')
-        if cos >= 0.9: results90.append('r')
-        else: results90.append('s')
-        if cos >= 0.95: results95.append('r')
-        else: results95.append('s')
-        
+        if cos >= threshold and real_classification == 'r': correct_real += 1
+        elif cos < threshold and real_classification == 's': correct_synthetic += 1
         total +=1
+        
+    gc.collect()
 
 time_end_testing = time.ticks_ms()
 time_elapsed_testing = time.ticks_diff(time_end_testing, time_end_training) /1000
 time_elapsed_total= time.ticks_diff(time_end_testing, time_start_total) /1000
 
-correct85 = 0
-correct90 = 0
-correct95 = 0
-for j in range(len(results85)):
-    if real_classification[j] == results85[j]: correct85 += 1
-    if real_classification[j] == results90[j]: correct90 += 1
-    if real_classification[j] == results95[j]: correct95 += 1
-    
-print(f"accuracy85:{correct85/total}")
-print(f"accuracy90:{correct90/total}")
-print(f"accuracy95:{correct95/total}")
+print(f"Time training: {time_elapsed_training}s")
+print(f"Time testing: {time_elapsed_testing}s")
+print(f"Accuracy: {(correct_real+correct_synthetic)/total}")
+print(f"True positive rate (TPR): {correct_real/real_entry}")
+print(f"True negative rate (TNR): {correct_synthetic/synthetic_entry}")
+print(f"False positive rate (FPR): {1 - (correct_synthetic/synthetic_entry)}")
+print(f"False negative rate (FNR): {1 - (correct_real/real_entry)}")
+print(f"Precision (PPV): {correct_real/(correct_real + (synthetic_entry - correct_synthetic))}")
+print(f"Negative predictive value (NPV): {correct_synthetic/(correct_synthetic + (real_entry - correct_real))}")
+print(f"Balanced accuracy (BA): {(correct_real/real_entry + correct_synthetic/synthetic_entry)/2}")
+print(f"F1 score: {2 * (correct_synthetic+correct_real) / (2*total)}")
 print(f"time matrix creation(s): {time_elapsed_matrix_creation}")
 print(f"time training(s): {time_elapsed_training}")
 print(f"time testing(s): {time_elapsed_testing}")

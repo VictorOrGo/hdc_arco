@@ -1,5 +1,5 @@
-#ifndef BYTEHD_H
-#define BYTEHD_H
+#ifndef BYTEHD_LIB_H
+#define BYTEHD_LIB_H
 
 #include <stdint.h>
 #include "hdc.h"
